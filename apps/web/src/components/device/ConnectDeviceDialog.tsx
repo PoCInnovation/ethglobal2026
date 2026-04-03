@@ -1,4 +1,5 @@
 import { useLedger } from "@/lib/ledger-provider";
+import { cn } from "@/lib/utils";
 import { Button, Dialog, DialogBody, DialogContent, Spinner, Spot } from "@ledgerhq/lumen-ui-react";
 import { ChevronRight, Close, LedgerLogo, Usb } from "@ledgerhq/lumen-ui-react/symbols";
 import * as RadixDialog from "@radix-ui/react-dialog";
@@ -32,31 +33,58 @@ function CustomHeader({ title, onClose }: { title: string; onClose: () => void }
 function TransportSelector({
 	onSelectUsb,
 	onSelectBle,
-}: { onSelectUsb: () => void; onSelectBle: () => void }) {
+	isWebHidSupported,
+	isWebBleSupported,
+}: {
+	onSelectUsb: () => void;
+	onSelectBle: () => void;
+	isWebHidSupported: boolean;
+	isWebBleSupported: boolean;
+}) {
 	return (
 		<div className="flex flex-col gap-12">
 			<button
 				type="button"
+				disabled={!isWebHidSupported}
 				onClick={onSelectUsb}
-				className="flex items-center gap-16 rounded-lg bg-muted hover:bg-muted-hover p-16 transition-colors"
+				className={cn(
+					"flex items-center gap-16 rounded-lg bg-muted p-16 transition-colors text-left",
+					isWebHidSupported
+						? "hover:bg-muted-hover"
+						: "cursor-not-allowed opacity-60",
+				)}
 			>
 				<Spot appearance="icon" icon={Usb} size={40} />
 				<div className="flex flex-col items-start gap-2 flex-1">
 					<span className="body-1-semi-bold text-base">Connect with USB</span>
-					<span className="body-2 text-muted">Plug in and unlock your device</span>
+					<span className="body-2 text-muted">
+						{isWebHidSupported
+							? "Plug in and unlock your device"
+							: "WebHID is not available in this browser. Try Chrome or Edge."}
+					</span>
 				</div>
 				<ChevronRight size={20} className="text-muted" />
 			</button>
 
 			<button
 				type="button"
+				disabled={!isWebBleSupported}
 				onClick={onSelectBle}
-				className="flex items-center gap-16 rounded-lg bg-muted hover:bg-muted-hover p-16 transition-colors"
+				className={cn(
+					"flex items-center gap-16 rounded-lg bg-muted p-16 transition-colors text-left",
+					isWebBleSupported
+						? "hover:bg-muted-hover"
+						: "cursor-not-allowed opacity-60",
+				)}
 			>
 				<Spot appearance="bluetooth" size={40} />
 				<div className="flex flex-col items-start gap-2 flex-1">
 					<span className="body-1-semi-bold text-base">Connect with bluetooth</span>
-					<span className="body-2 text-muted">Power on and unlock your device</span>
+					<span className="body-2 text-muted">
+						{isWebBleSupported
+							? "Power on and unlock your device"
+							: "Web Bluetooth is not available here. Use USB, or Chrome with Web Bluetooth enabled (Linux may need chrome://flags)."}
+					</span>
 				</div>
 				<ChevronRight size={20} className="text-muted" />
 			</button>
@@ -111,6 +139,8 @@ export function ConnectDeviceDialog() {
 		isDerivingAddresses,
 		deviceActionState,
 		hasActiveSession,
+		isWebBleSupported,
+		isWebHidSupported,
 	} = useLedger();
 
 	const handleClose = () => {
@@ -158,6 +188,8 @@ export function ConnectDeviceDialog() {
 							<TransportSelector
 								onSelectUsb={() => connect("usb")}
 								onSelectBle={() => connect("ble")}
+								isWebHidSupported={isWebHidSupported}
+								isWebBleSupported={isWebBleSupported}
 							/>
 						</DialogBody>
 					</>
