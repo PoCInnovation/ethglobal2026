@@ -93,6 +93,9 @@ interface OnChainMarket {
 	question: string;
 	endDate: bigint;
 	active: boolean;
+	tokenId: string;
+	negRisk: boolean;
+	tickSize: string; // decimal string e.g. "0.01"
 	lastUpdate: bigint;
 }
 
@@ -119,14 +122,21 @@ async function readOnChainMarket(conditionId: string): Promise<OnChainMarket | n
 			data: raw.data,
 		}) as any;
 
-		const lastUpdate = BigInt(decoded.lastUpdate ?? decoded[4] ?? 0);
+		const lastUpdate = BigInt(decoded.lastUpdate ?? decoded[7] ?? 0);
 		if (lastUpdate === 0n) return null;
+
+		// Convert tickSize from basis points (uint256) back to decimal string
+		const tickSizeBps = Number(BigInt(decoded.tickSize ?? decoded[6] ?? 0));
+		const tickSizeDecimal = tickSizeBps > 0 ? (tickSizeBps / 10000).toString() : "0.01";
 
 		return {
 			conditionId: decoded.conditionId ?? decoded[0],
 			question: decoded.question ?? decoded[1],
 			endDate: BigInt(decoded.endDate ?? decoded[2] ?? 0),
 			active: decoded.active ?? decoded[3],
+			tokenId: String(BigInt(decoded.tokenId ?? decoded[4] ?? 0)),
+			negRisk: decoded.negRisk ?? decoded[5] ?? false,
+			tickSize: tickSizeDecimal,
 			lastUpdate,
 		};
 	} catch (err) {
@@ -178,6 +188,9 @@ export interface VerifiedMarketData {
 	question: string;
 	endDate: number; // Unix seconds
 	active: boolean;
+	tokenId: string;       // Yes outcome token ID
+	negRisk: boolean;      // Whether market uses negRisk CTF Exchange
+	tickSize: string;      // Decimal string e.g. "0.01"
 	source: "on-chain" | "gamma-fallback";
 }
 
@@ -187,42 +200,38 @@ export async function fetchVerifiedMarketForSigning(
 	const isOracleDeployed =
 		ORACLE_ADDRESS !== "0x0000000000000000000000000000000000000000";
 
-	if (!isOracleDeployed) {
-		logger.warn({ conditionId }, "Oracle not deployed — falling back to Gamma");
-		return fetchGammaFallback(conditionId);
-	}
-
-	// Step 1: Resolve Gamma numeric marketId
-	const marketId = await resolveGammaMarketId(conditionId);
-	if (!marketId) {
-		logger.warn({ conditionId }, "Could not resolve Gamma marketId — falling back to Gamma");
-		return fetchGammaFallback(conditionId);
-	}
-
-	// Step 2: Run CRE simulation (writes on-chain, waits for completion ~1-2s)
-	try {
-		await runCRESimulation([marketId]);
-	} catch (err) {
-		logger.error({ err, conditionId, marketId }, "CRE simulation failed — falling back to Gamma");
-		return fetchGammaFallback(conditionId);
-	}
-
-	// Step 3: Read fresh on-chain data
-	const onChain = await readOnChainMarket(conditionId);
-	if (onChain) {
-		logger.info({ conditionId, question: onChain.question, source: "on-chain" }, "CRE-verified market data ready");
-		return {
-			conditionId: onChain.conditionId,
-			question: onChain.question,
-			endDate: Number(onChain.endDate),
-			active: onChain.active,
-			source: "on-chain",
-		};
-	}
-
-	// Step 4: Gamma fallback (shouldn't happen if simulation succeeded)
-	logger.warn({ conditionId }, "On-chain read returned empty after simulation — falling back to Gamma");
+	// [TEST MODE] Skip all on-chain reads — use API only
+	logger.info({ conditionId }, "TEST MODE: Using Gamma/CLOB API directly (no on-chain)");
 	return fetchGammaFallback(conditionId);
+
+	// --- Original flow (commented for testing) ---
+	// if (!isOracleDeployed) {
+	// 	logger.warn({ conditionId }, "Oracle not deployed — falling back to Gamma");
+	// 	return fetchGammaFallback(conditionId);
+	// }
+	// const marketId = await resolveGammaMarketId(conditionId);
+	// if (!marketId) {
+	// 	return fetchGammaFallback(conditionId);
+	// }
+	// try {
+	// 	await runCRESimulation([marketId]);
+	// } catch (err) {
+	// 	return fetchGammaFallback(conditionId);
+	// }
+	// const onChain = await readOnChainMarket(conditionId);
+	// if (onChain) {
+	// 	return {
+	// 		conditionId: onChain.conditionId,
+	// 		question: onChain.question,
+	// 		endDate: Number(onChain.endDate),
+	// 		active: onChain.active,
+	// 		tokenId: onChain.tokenId,
+	// 		negRisk: onChain.negRisk,
+	// 		tickSize: onChain.tickSize,
+	// 		source: "on-chain",
+	// 	};
+	// }
+	// return fetchGammaFallback(conditionId);
 }
 
 async function fetchGammaFallback(conditionId: string): Promise<VerifiedMarketData> {
@@ -230,11 +239,19 @@ async function fetchGammaFallback(conditionId: string): Promise<VerifiedMarketDa
 	const res = await fetch(url);
 	if (!res.ok) throw new Error(`Cannot fetch market data for ${conditionId}`);
 	const m = await res.json();
+
+	// Resolve Yes token from tokens array
+	const tokens: Array<{ token_id: string; outcome: string }> = m.tokens ?? [];
+	const yesToken = tokens.find((t) => t.outcome === "Yes") ?? tokens[0];
+
 	return {
 		conditionId,
 		question: m.question,
 		endDate: m.end_date_iso ? Math.floor(new Date(m.end_date_iso).getTime() / 1000) : 0,
 		active: m.active ?? false,
+		tokenId: yesToken?.token_id ?? "",
+		negRisk: m.neg_risk ?? false,
+		tickSize: m.minimum_tick_size ?? "0.01",
 		source: "gamma-fallback",
 	};
 }

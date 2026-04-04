@@ -691,13 +691,23 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 					throw new Error(`Market is no longer active: "${verifiedMarket.question}"`);
 				}
 
-				// Step 2: Simulate — fetch latest price + negRisk
-				console.log("[Polymarket] Simulating order for tokenId:", polyDetails.tokenId);
-				const simulation = await simulateOrder(polyDetails.tokenId);
+				// Use oracle-verified tokenId if available (on-chain source), else keep intent's tokenId
+				const effectiveTokenId = verifiedMarket.tokenId || polyDetails.tokenId;
+
+				// Step 2: Simulate — fetch latest live price (price must always be fresh)
+				console.log("[Polymarket] Simulating order for tokenId:", effectiveTokenId);
+				const simulation = await simulateOrder(effectiveTokenId);
 				console.log("[Polymarket] Simulation:", simulation);
 
-				// Step 3: Build order with oracle-verified market title injected
-				const enrichedDetails = { ...polyDetails, marketTitle: verifiedMarket.question };
+				// Prefer oracle-verified negRisk/tickSize when source is on-chain
+				if (verifiedMarket.source === "on-chain") {
+					simulation.negRisk = verifiedMarket.negRisk;
+					simulation.tickSize = verifiedMarket.tickSize;
+					console.log("[Polymarket] Using oracle-verified negRisk/tickSize:", verifiedMarket.negRisk, verifiedMarket.tickSize);
+				}
+
+				// Step 3: Build order with oracle-verified data injected
+				const enrichedDetails = { ...polyDetails, marketTitle: verifiedMarket.question, tokenId: effectiveTokenId };
 				const order = buildOrderFromIntent(enrichedDetails, account, simulation);
 				console.log("[Polymarket] Order built (oracle source:", verifiedMarket.source, "):", order.message);
 
