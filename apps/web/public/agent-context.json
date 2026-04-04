@@ -1,6 +1,6 @@
 {
 	"title": "Agent Quickstart — Create a Payment Intent",
-	"description": "Minimal instructions for an AI agent to create a payment intent using a JSON credential file.",
+	"description": "Minimal instructions for an AI agent to create payment intents (transfers and Polymarket trades) using a JSON credential file.",
 	"baseUrl": "https://www.agentintents.io",
 	"prerequisites": ["Foundry (cast)", "curl", "jq"],
 	"credentialFile": {
@@ -24,7 +24,7 @@
 		},
 		"bodyHashing": "The bodyHash is computed over the exact bytes sent in the request body. Use compact JSON (no extra whitespace) to ensure a deterministic hash."
 	},
-	"createIntent": {
+	"createTransferIntent": {
 		"method": "POST",
 		"url": "https://www.agentintents.io/api/intents",
 		"headers": {
@@ -71,6 +71,88 @@
 		},
 		"nextStep": "Share the paymentUrl with the human so they can review and sign the transaction."
 	},
+	"searchPolymarketMarkets": {
+		"method": "GET",
+		"url": "https://www.agentintents.io/api/polymarket/markets",
+		"description": "Search for active Polymarket markets by keyword. No authentication required. Use this to find the conditionId before creating a polymarket_trade intent.",
+		"parameters": {
+			"q": { "type": "string", "default": "", "description": "Search keyword (e.g. 'bitcoin', 'trump', 'ethereum')" },
+			"limit": { "type": "number", "default": 10, "min": 1, "max": 50, "description": "Max results" }
+		},
+		"exampleRequest": "GET https://www.agentintents.io/api/polymarket/markets?q=bitcoin&limit=5",
+		"exampleResponse": {
+			"success": true,
+			"markets": [
+				{
+					"conditionId": "0xabc123...",
+					"question": "Will Bitcoin hit $100k by July 2026?",
+					"yesPrice": 0.65,
+					"noPrice": 0.35,
+					"volume": 1250000,
+					"endDate": "2026-07-01T00:00:00.000Z",
+					"active": true
+				}
+			]
+		}
+	},
+	"createPolymarketIntent": {
+		"method": "POST",
+		"url": "https://www.agentintents.io/api/intents",
+		"headers": {
+			"Content-Type": "application/json",
+			"Authorization": "AgentAuth <timestamp>.<bodyHash>.<signature>"
+		},
+		"description": "Create a Polymarket trade intent. The backend enriches it with marketTitle and outcomePrice from the Gamma API.",
+		"body": {
+			"agentId": "my-agent",
+			"agentName": "My Agent",
+			"details": {
+				"type": "polymarket_trade",
+				"conditionId": "0xabc123...",
+				"outcome": "Yes",
+				"amount": "50",
+				"chainId": 137,
+				"memo": "Agent's justification for the trade"
+			},
+			"urgency": "normal",
+			"expiresInMinutes": 60
+		},
+		"fields": {
+			"type": { "required": true, "description": "Must be 'polymarket_trade'" },
+			"conditionId": { "required": true, "description": "Polymarket condition ID from search endpoint" },
+			"outcome": { "required": true, "description": "'Yes' or 'No'" },
+			"amount": { "required": true, "description": "Amount in USDC (e.g. '50', '100.50')" },
+			"chainId": { "required": true, "description": "Must be 137 (Polygon)" },
+			"memo": { "required": false, "description": "Agent's justification for the trade (shown to the human)" }
+		},
+		"exampleResponse": {
+			"success": true,
+			"intent": {
+				"id": "int_1770399099999_def456ab",
+				"userId": "0x20bfb083c5adacc91c46ac4d37905d0447968166",
+				"agentId": "my-agent",
+				"agentName": "My Agent",
+				"details": {
+					"type": "polymarket_trade",
+					"conditionId": "0xabc123...",
+					"marketTitle": "Will Bitcoin hit $100k by July 2026?",
+					"outcome": "Yes",
+					"amount": "50",
+					"outcomePrice": 0.65,
+					"chainId": 137,
+					"memo": "Agent's justification for the trade"
+				},
+				"urgency": "normal",
+				"status": "pending",
+				"trustChainId": "0x20bfb083c5adacc91c46ac4d37905d0447968166",
+				"createdAt": "2026-02-06T17:35:00.000Z",
+				"expiresAt": "2026-02-06T18:35:00.000Z",
+				"statusHistory": [{ "status": "pending", "timestamp": "2026-02-06T17:35:00.000Z" }]
+			},
+			"paymentUrl": "https://www.agentintents.io/pay/int_1770399099999_def456ab"
+		},
+		"nextStep": "Share the paymentUrl with the human so they can review the trade and sign with their Ledger."
+	},
 	"pollForCompletion": {
 		"method": "GET",
 		"url": "https://www.agentintents.io/api/intents/<intent-id>",
@@ -78,16 +160,13 @@
 			"Authorization": "AgentAuth <timestamp>.0x.<signature>"
 		},
 		"terminalStatuses": ["confirmed", "rejected", "failed", "expired"],
-		"description": "Poll until status is one of the terminal states."
-	},
-	"completeExample": {
-		"language": "bash",
-		"script": "#!/usr/bin/env bash\nset -euo pipefail\n\nCREDENTIAL_FILE=\"agent-credential.json\"\nPRIVATE_KEY=$(jq -r '.privateKey' \"$CREDENTIAL_FILE\")\nAGENT_LABEL=$(jq -r '.label' \"$CREDENTIAL_FILE\")\n\nBODY=$(jq -cn \\\n  --arg agentName \"$AGENT_LABEL\" \\\n  '{\n    agentId: \"my-agent\",\n    agentName: $agentName,\n    details: {\n      type: \"transfer\",\n      token: \"USDC\",\n      amount: \"1.00\",\n      recipient: \"0xRecipientAddress\",\n      chainId: 8453,\n      memo: \"Reason for payment\"\n    },\n    urgency: \"normal\",\n    expiresInMinutes: 60\n  }')\n\nTIMESTAMP=$(date +%s)\nBODY_HASH=$(cast keccak \"$BODY\")\nSIGNATURE=$(cast wallet sign --private-key \"$PRIVATE_KEY\" \"${TIMESTAMP}.${BODY_HASH}\")\n\nRESPONSE=$(curl -s -X POST \"https://www.agentintents.io/api/intents\" \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Authorization: AgentAuth ${TIMESTAMP}.${BODY_HASH}.${SIGNATURE}\" \\\n  -d \"$BODY\")\n\necho \"$RESPONSE\" | jq .\n\nPAYMENT_URL=$(echo \"$RESPONSE\" | jq -r '.paymentUrl')\necho \"\"\necho \"Share this link with the human: $PAYMENT_URL\"\n\nINTENT_ID=$(echo \"$RESPONSE\" | jq -r '.intent.id')\nSTATUS=\"pending\"\n\nfor i in $(seq 1 120); do\n  case \"$STATUS\" in confirmed|rejected|failed|expired) break ;; esac\n  sleep 30\n  POLL_TS=$(date +%s)\n  POLL_SIG=$(cast wallet sign --private-key \"$PRIVATE_KEY\" \"${POLL_TS}.0x\")\n  STATUS=$(curl -s \"https://www.agentintents.io/api/intents/${INTENT_ID}\" \\\n    -H \"Authorization: AgentAuth ${POLL_TS}.0x.${POLL_SIG}\" \\\n    | jq -r '.intent.status')\n  echo \"Poll $i: status=$STATUS\"\ndone\n\necho \"Final status: $STATUS\""
+		"description": "Poll until status is one of the terminal states. Works for both transfer and polymarket_trade intents."
 	},
 	"supportedChains": [
 		{ "chainId": 8453, "name": "Base", "token": "USDC", "notes": "Mainnet" },
 		{ "chainId": 84532, "name": "Base Sepolia", "token": "USDC", "notes": "Testnet" },
-		{ "chainId": 11155111, "name": "Sepolia", "token": "USDC", "notes": "Testnet" }
+		{ "chainId": 11155111, "name": "Sepolia", "token": "USDC", "notes": "Testnet" },
+		{ "chainId": 137, "name": "Polygon", "token": "USDC", "notes": "Polymarket trades only" }
 	],
 	"troubleshooting": [
 		{
@@ -104,6 +183,16 @@
 			"error": "401 Authentication failed",
 			"cause": "Body hash mismatch",
 			"fix": "Ensure you hash the exact bytes sent as the request body (compact JSON, no trailing newline)"
+		},
+		{
+			"error": "400 Market not found",
+			"cause": "Invalid conditionId",
+			"fix": "Use the search endpoint (GET /api/polymarket/markets?q=...) to find valid condition IDs"
+		},
+		{
+			"error": "400 Market is no longer active",
+			"cause": "Market has closed or expired",
+			"fix": "Search for a different active market"
 		}
 	],
 	"links": {

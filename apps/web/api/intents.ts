@@ -1,4 +1,4 @@
-import type { IntentStatus, TransferIntent } from "@agent-intents/shared";
+import type { IntentDetails, IntentStatus } from "@agent-intents/shared";
 import { isSupportedChain } from "@agent-intents/shared";
 /**
  * Intents endpoint
@@ -26,6 +26,7 @@ import {
 } from "./_lib/http.js";
 import { createIntent, getIntentsByUser, supersedePendingIntents } from "./_lib/intentsRepo.js";
 import { logger } from "./_lib/logger.js";
+import { verifyAndEnrichPolymarketIntent } from "./_lib/oracleCre.js";
 import { createIntentRequestSchema } from "./_lib/validation.js";
 
 /** Maximum intents per agent per minute */
@@ -104,22 +105,42 @@ export default methodRouter({
 		const body = parseBodyWithSchema(req, res, createIntentRequestSchema);
 		if (body === null) return;
 
-		// Semantic validation of intent details
+		// Semantic validation — branch by intent type
 		if (!isSupportedChain(body.details.chainId)) {
 			jsonError(res, "Unsupported chain ID", 400);
 			return;
 		}
-		if (!isAddress(body.details.recipient)) {
-			jsonError(res, "Invalid recipient address", 400);
-			return;
-		}
-		if (
-			typeof body.details.amount !== "string" ||
-			body.details.amount.length === 0 ||
-			Number.isNaN(Number(body.details.amount))
-		) {
-			jsonError(res, "Invalid amount", 400);
-			return;
+
+		if (body.details.type === "polymarket_trade") {
+			if (
+				typeof body.details.amount !== "string" ||
+				body.details.amount.length === 0 ||
+				Number.isNaN(Number(body.details.amount))
+			) {
+				jsonError(res, "Invalid amount", 400);
+				return;
+			}
+			try {
+				const enriched = await verifyAndEnrichPolymarketIntent(body.details);
+				(body as { details: typeof enriched }).details = enriched;
+			} catch (err) {
+				const message = err instanceof Error ? err.message : "Polymarket enrichment failed";
+				jsonError(res, message, 400);
+				return;
+			}
+		} else {
+			if (!isAddress(body.details.recipient)) {
+				jsonError(res, "Invalid recipient address", 400);
+				return;
+			}
+			if (
+				typeof body.details.amount !== "string" ||
+				body.details.amount.length === 0 ||
+				Number.isNaN(Number(body.details.amount))
+			) {
+				jsonError(res, "Invalid amount", 400);
+				return;
+			}
 		}
 
 		// Rate limiting: max N intents per agent per minute (fail closed)
@@ -181,7 +202,7 @@ export default methodRouter({
 					userId,
 					agentId: body.agentId,
 					agentName: body.agentName ?? body.agentId,
-					details: body.details as unknown as TransferIntent,
+					details: body.details as unknown as IntentDetails,
 					urgency: body.urgency ?? "normal",
 					expiresAt,
 					trustChainId,
@@ -196,16 +217,20 @@ export default methodRouter({
 		const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost:3000";
 		const paymentUrl = `${proto}://${host}/pay/${intent.id}`;
 
-		logger.info(
-			{
-				intentId: intent.id,
-				agentName: intent.agentName,
-				amount: intent.details.amount,
-				token: intent.details.token,
-				recipient: intent.details.recipient,
-			},
-			"Intent created",
-		);
+		const logFields: Record<string, unknown> = {
+			intentId: intent.id,
+			agentName: intent.agentName,
+			type: intent.details.type,
+			amount: intent.details.amount,
+		};
+		if (intent.details.type === "transfer") {
+			logFields.token = intent.details.token;
+			logFields.recipient = intent.details.recipient;
+		} else if (intent.details.type === "polymarket_trade") {
+			logFields.conditionId = intent.details.conditionId;
+			logFields.outcome = intent.details.outcome;
+		}
+		logger.info(logFields, "Intent created");
 
 		jsonSuccess(res, { intent, paymentUrl }, 201);
 	},

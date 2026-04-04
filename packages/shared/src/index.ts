@@ -41,6 +41,7 @@ export function isValidTransition(from: IntentStatus, to: IntentStatus): boolean
 // Supported intent types
 export type IntentType =
 	| "transfer" // Token transfer
+	| "polymarket_trade" // Polymarket prediction market trade
 	| "swap" // Token swap (future)
 	| "nft" // NFT transfer (future)
 	| "contract"; // Generic contract call (future)
@@ -167,6 +168,28 @@ export interface X402Context {
 	expiresAt?: string;
 }
 
+// Polymarket trade intent
+export interface PolymarketTradeDetails {
+	type: "polymarket_trade";
+	conditionId: string; // Polymarket condition ID (bytes32 hex)
+	marketTitle: string; // Enriched by the backend via Oracle CRE / Gamma API
+	outcome: "Yes" | "No";
+	amount: string; // USDC amount (human-readable, e.g. "50")
+	outcomePrice?: number; // Current price (e.g. 0.65), enriched by backend
+	chainId: 137; // Polygon
+	memo?: string; // Agent justification
+}
+
+export type IntentDetails = TransferIntent | PolymarketTradeDetails;
+
+export function isPolymarketTrade(d: IntentDetails): d is PolymarketTradeDetails {
+	return d.type === "polymarket_trade";
+}
+
+export function isTransferIntent(d: IntentDetails): d is TransferIntent {
+	return d.type === "transfer";
+}
+
 // Token transfer intent
 export interface TransferIntent {
 	type: "transfer";
@@ -196,8 +219,8 @@ export interface Intent {
 	agentId: string; // Which agent created this (e.g., 'clouseau')
 	agentName: string; // Display name (e.g., 'Inspector Clouseau')
 
-	// Intent details (union for different types)
-	details: TransferIntent; // Expand to union as we add types
+	// Intent details (discriminated union on `type`)
+	details: IntentDetails;
 
 	// Metadata
 	urgency: IntentUrgency;
@@ -263,7 +286,7 @@ export interface RegisterAgentResponse {
 export interface CreateIntentRequest {
 	agentId: string;
 	agentName: string;
-	details: TransferIntent;
+	details: IntentDetails;
 	urgency?: IntentUrgency;
 	expiresInMinutes?: number;
 }
@@ -296,6 +319,11 @@ export interface IntentWebhook {
 // =============================================================================
 
 export const SUPPORTED_CHAINS = {
+	137: {
+		name: "Polygon",
+		symbol: "MATIC",
+		explorer: "https://polygonscan.com",
+	},
 	8453: {
 		name: "Base",
 		symbol: "ETH",
@@ -323,6 +351,13 @@ export const SUPPORTED_TOKENS: Record<
 	SupportedChainId,
 	Record<string, { address: string; decimals: number }>
 > = {
+	// Polygon mainnet
+	137: {
+		USDC: {
+			address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+			decimals: 6,
+		},
+	},
 	// Base mainnet
 	8453: {
 		USDC: {
@@ -442,3 +477,19 @@ export function extractDomain(url: string): string {
 		return url;
 	}
 }
+
+// =============================================================================
+// Polymarket Configuration
+// =============================================================================
+
+export const POLYMARKET_CONFIG = {
+	GAMMA_API_BASE: "https://gamma-api.polymarket.com",
+	/** PolyProxy contract — override via POLY_PROXY_ADDRESS / VITE_POLY_PROXY_ADDRESS env var */
+	POLY_PROXY_ADDRESS: "0x0000000000000000000000000000000000000000" as `0x${string}`,
+	/** Oracle CRE contract — override via ORACLE_CRE_ADDRESS / VITE_ORACLE_CRE_ADDRESS env var */
+	ORACLE_CRE_ADDRESS: "0x0000000000000000000000000000000000000000" as `0x${string}`,
+	/** Polymarket CTF Exchange on Polygon */
+	CTF_EXCHANGE: "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E" as `0x${string}`,
+	/** Polygon chainId used by Polymarket */
+	CHAIN_ID: 137 as const,
+} as const;

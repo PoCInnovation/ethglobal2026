@@ -11,11 +11,77 @@
 	],
 	"tags": [
 		{ "name": "Intents", "description": "Create, read, and update payment intents" },
+		{ "name": "Polymarket", "description": "Search Polymarket markets and create trade intents" },
 		{ "name": "Agents", "description": "Agent provisioning and management" },
 		{ "name": "Auth", "description": "Session-based auth for web UI (EIP-712 challenge/verify)" },
 		{ "name": "Health", "description": "Service health" }
 	],
 	"paths": {
+		"/api/polymarket/markets": {
+			"get": {
+				"tags": ["Polymarket"],
+				"operationId": "searchPolymarketMarkets",
+				"summary": "Search active Polymarket markets",
+				"description": "Search for active Polymarket prediction markets by keyword. Returns simplified market data including conditionId, question, prices, and volume. No authentication required — data is public.\n\nUse this endpoint to discover the `conditionId` needed to create a `polymarket_trade` intent.",
+				"parameters": [
+					{
+						"name": "q",
+						"in": "query",
+						"required": false,
+						"description": "Search keyword (e.g. 'bitcoin', 'trump', 'ethereum')",
+						"schema": { "type": "string", "default": "" }
+					},
+					{
+						"name": "limit",
+						"in": "query",
+						"required": false,
+						"description": "Max results (1–50)",
+						"schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 10 }
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/PolymarketMarketsResponse" },
+								"examples": {
+									"search_bitcoin": {
+										"summary": "Search for Bitcoin markets",
+										"value": {
+											"success": true,
+											"markets": [
+												{
+													"conditionId": "0xabc123...",
+													"question": "Will Bitcoin hit $100k by July 2026?",
+													"yesPrice": 0.65,
+													"noPrice": 0.35,
+													"volume": 1250000,
+													"endDate": "2026-07-01T00:00:00.000Z",
+													"active": true
+												}
+											]
+										}
+									}
+								}
+							}
+						}
+					},
+					"502": {
+						"description": "Upstream Gamma API error",
+						"content": {
+							"application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
+						}
+					},
+					"503": {
+						"description": "Service temporarily unavailable",
+						"content": {
+							"application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
+						}
+					}
+				}
+			}
+		},
 		"/api/health": {
 			"get": {
 				"tags": ["Health"],
@@ -139,6 +205,23 @@
 													"payTo": "0xPayToAddress..."
 												}
 											}
+										}
+									}
+								},
+								"polymarket_trade": {
+									"summary": "Polymarket prediction market trade",
+									"value": {
+										"agentId": "my-research-bot",
+										"agentName": "Research Assistant",
+										"urgency": "normal",
+										"expiresInMinutes": 60,
+										"details": {
+											"type": "polymarket_trade",
+											"conditionId": "0xabc123...",
+											"outcome": "Yes",
+											"amount": "50",
+											"chainId": 137,
+											"memo": "Based on current market analysis, this outcome is likely"
 										}
 									}
 								}
@@ -945,7 +1028,7 @@
 					"recipientEns": { "type": "string", "description": "ENS name if resolved" },
 					"chainId": {
 						"type": "integer",
-						"description": "Chain ID: 8453 (Base), 11155111 (Sepolia), 84532 (Base Sepolia)"
+						"description": "Chain ID: 8453 (Base), 84532 (Base Sepolia), 11155111 (Sepolia), 137 (Polygon)"
 					},
 					"memo": { "type": "string", "description": "Human-readable reason for the transaction" },
 					"resource": {
@@ -964,6 +1047,68 @@
 					},
 					"category": { "$ref": "#/components/schemas/PaymentCategory" },
 					"x402": { "$ref": "#/components/schemas/X402Context" }
+				}
+			},
+			"PolymarketTradeDetails": {
+				"type": "object",
+				"required": ["type", "conditionId", "outcome", "amount", "chainId"],
+				"description": "Details for a Polymarket prediction market trade. The backend enriches this with marketTitle and outcomePrice from the Gamma API.",
+				"properties": {
+					"type": { "type": "string", "const": "polymarket_trade" },
+					"conditionId": {
+						"type": "string",
+						"description": "Polymarket condition ID (use GET /api/polymarket/markets to find it)"
+					},
+					"marketTitle": {
+						"type": "string",
+						"description": "Market question (auto-populated by backend from Gamma API)"
+					},
+					"outcome": {
+						"type": "string",
+						"enum": ["Yes", "No"],
+						"description": "The outcome to bet on"
+					},
+					"amount": {
+						"type": "string",
+						"description": "Amount in USDC (e.g. '50', '100.50')"
+					},
+					"outcomePrice": {
+						"type": "number",
+						"description": "Current price of the chosen outcome (0–1, auto-populated by backend)"
+					},
+					"chainId": {
+						"type": "integer",
+						"const": 137,
+						"description": "Must be 137 (Polygon)"
+					},
+					"memo": {
+						"type": "string",
+						"description": "Agent's justification for the trade (shown to the human signer)"
+					}
+				}
+			},
+			"PolymarketMarket": {
+				"type": "object",
+				"required": ["conditionId", "question", "yesPrice", "noPrice", "volume", "endDate", "active"],
+				"properties": {
+					"conditionId": { "type": "string", "description": "Polymarket condition ID" },
+					"question": { "type": "string", "description": "Market question" },
+					"yesPrice": { "type": "number", "description": "Current Yes price (0–1)" },
+					"noPrice": { "type": "number", "description": "Current No price (0–1)" },
+					"volume": { "type": "number", "description": "Total trading volume in USD" },
+					"endDate": { "type": "string", "format": "date-time", "description": "Market end date" },
+					"active": { "type": "boolean", "description": "Whether the market is currently active" }
+				}
+			},
+			"PolymarketMarketsResponse": {
+				"type": "object",
+				"required": ["success", "markets"],
+				"properties": {
+					"success": { "type": "boolean", "const": true },
+					"markets": {
+						"type": "array",
+						"items": { "$ref": "#/components/schemas/PolymarketMarket" }
+					}
 				}
 			},
 			"Intent": {
@@ -987,7 +1132,19 @@
 					"userId": { "type": "string", "description": "Wallet address of the human signer" },
 					"agentId": { "type": "string", "description": "Agent identifier" },
 					"agentName": { "type": "string", "description": "Agent display name" },
-					"details": { "$ref": "#/components/schemas/TransferIntent" },
+					"details": {
+						"oneOf": [
+							{ "$ref": "#/components/schemas/TransferIntent" },
+							{ "$ref": "#/components/schemas/PolymarketTradeDetails" }
+						],
+						"discriminator": {
+							"propertyName": "type",
+							"mapping": {
+								"transfer": "#/components/schemas/TransferIntent",
+								"polymarket_trade": "#/components/schemas/PolymarketTradeDetails"
+							}
+						}
+					},
 					"urgency": { "$ref": "#/components/schemas/IntentUrgency" },
 					"status": { "$ref": "#/components/schemas/IntentStatus" },
 					"trustChainId": {
@@ -1075,7 +1232,19 @@
 						"minimum": 1,
 						"description": "Minutes until intent expires (default: 1440 = 24 hours)"
 					},
-					"details": { "$ref": "#/components/schemas/TransferIntent" }
+					"details": {
+						"oneOf": [
+							{ "$ref": "#/components/schemas/TransferIntent" },
+							{ "$ref": "#/components/schemas/PolymarketTradeDetails" }
+						],
+						"discriminator": {
+							"propertyName": "type",
+							"mapping": {
+								"transfer": "#/components/schemas/TransferIntent",
+								"polymarket_trade": "#/components/schemas/PolymarketTradeDetails"
+							}
+						}
+					}
 				}
 			},
 			"UpdateIntentStatusRequest": {

@@ -117,6 +117,10 @@ interface LedgerContextType {
 	retry: () => Promise<void>;
 	/** Whether there is an active DMK session (device physically connected). */
 	hasActiveSession: boolean;
+	/** True if this browser exposes the Web Bluetooth API (e.g. Chrome on macOS/Windows; often false on Linux). */
+	isWebBleSupported: boolean;
+	/** True if this browser exposes WebHID for USB Ledger connection. */
+	isWebHidSupported: boolean;
 }
 
 const LedgerContext = createContext<LedgerContextType | null>(null);
@@ -144,6 +148,20 @@ function getDmk(): DeviceManagementKit {
 		dmkInstance = builder.build();
 	}
 	return dmkInstance;
+}
+
+type NavigatorWithDeviceApis = Navigator & { hid?: unknown; bluetooth?: unknown };
+
+/** WebHID (USB) — distinct from DMK's global isEnvironmentSupported() which is true if any transport works. */
+function isWebHidAvailable(): boolean {
+	if (typeof navigator === "undefined") return false;
+	return !!(navigator as NavigatorWithDeviceApis).hid;
+}
+
+/** Web Bluetooth — often missing on Linux/Firefox even when WebHID works. */
+function isWebBluetoothAvailable(): boolean {
+	if (typeof navigator === "undefined") return false;
+	return !!(navigator as NavigatorWithDeviceApis).bluetooth;
 }
 
 // =============================================================================
@@ -314,6 +332,16 @@ function classifyRecoverableError(
 		};
 	}
 
+	// --- GATT / BLE session failed (DMK tag is ConnectionOpeningError, not OpeningConnectionError) ---
+	if (tags.includes("ConnectionOpeningError") || tags.includes("OpeningConnectionError")) {
+		return {
+			status: "error",
+			message:
+				"Bluetooth connection failed. Unlock the Ledger, open the Ethereum app, keep it nearby, and quit Ledger Live. On Linux, Web Bluetooth is unreliable — use USB if this keeps happening.",
+			canRetry: true,
+		};
+	}
+
 	// --- Need to open app ---
 	if (codes.includes("6d00")) {
 		return {
@@ -347,8 +375,12 @@ function humanizeError(error: unknown): string {
 	if (tags.includes("DeviceNotOnboardedError")) {
 		return "Please set up your Ledger device first.";
 	}
-	if (tags.includes("OpeningConnectionError") || tags.includes("OpenAppDeviceActionError")) {
-		return "Could not connect to the device. Make sure it's connected and unlocked.";
+	if (
+		tags.includes("ConnectionOpeningError") ||
+		tags.includes("OpeningConnectionError") ||
+		tags.includes("OpenAppDeviceActionError")
+	) {
+		return "Could not open a session with the device. Unlock it, open the Ethereum app on the Ledger, keep it close to the computer, and quit Ledger Live or any other app using the device. On Linux, Web Bluetooth is experimental — try USB if this keeps failing.";
 	}
 	if (
 		tags.includes("DeviceDisconnectedWhileSendingError") ||
@@ -358,6 +390,12 @@ function humanizeError(error: unknown): string {
 	}
 	if (tags.includes("TransportNotSupportedError")) {
 		return "This browser does not support the selected transport. Please try Chrome or Edge.";
+	}
+	{
+		const msg = error instanceof Error ? error.message : String(error);
+		if (msg.includes("requestDevice") && msg.includes("undefined")) {
+			return "The browser could not open the device picker (a required API is missing). For USB use Chrome or Edge with WebHID; for Bluetooth use a setup where Web Bluetooth is available (on some Linux systems, enable it in chrome://flags).";
+		}
 	}
 	if (tags.includes("NoAccessibleDeviceError")) {
 		return "No Ledger device found. Make sure it's connected and unlocked.";
@@ -843,10 +881,17 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 			try {
 				const dmk = getDmk();
 
-				// Check environment support
-				if (!dmk.isEnvironmentSupported()) {
+				// Per-transport checks: DMK's isEnvironmentSupported() is true if *any* transport
+				// works (e.g. WebHID on Linux), which must not gate Web Bluetooth.
+				if (transport === "usb") {
+					if (!isWebHidAvailable()) {
+						throw new Error(
+							"USB connection needs WebHID. Use a supported browser (e.g. Chrome or Edge).",
+						);
+					}
+				} else if (!isWebBluetoothAvailable()) {
 					throw new Error(
-						"Your browser does not support WebHID or Web Bluetooth. Please use Chrome or Edge.",
+						"Web Bluetooth is not available here. Use USB, or enable Web Bluetooth in Chrome/Edge (on Linux you may need chrome://flags).",
 					);
 				}
 
@@ -1558,6 +1603,9 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 	// -----------------------------------------------------------------------
 	// Context value
 	// -----------------------------------------------------------------------
+	const isWebBleSupported = useMemo(() => isWebBluetoothAvailable(), []);
+	const isWebHidSupported = useMemo(() => isWebHidAvailable(), []);
+
 	const contextValue = useMemo(
 		() => ({
 			account,
@@ -1584,6 +1632,8 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 			isDerivingAddresses,
 			retry,
 			hasActiveSession,
+			isWebBleSupported,
+			isWebHidSupported,
 		}),
 		[
 			account,
@@ -1608,6 +1658,8 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 			isDerivingAddresses,
 			retry,
 			hasActiveSession,
+			isWebBleSupported,
+			isWebHidSupported,
 		],
 	);
 

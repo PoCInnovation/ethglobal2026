@@ -14,11 +14,18 @@ import {
 import { useUpdateIntentStatus } from "@/queries/intents";
 import {
 	type Intent,
+	type IntentDetails,
+	type PolymarketTradeDetails,
 	SUPPORTED_CHAINS,
 	SUPPORTED_TOKENS,
 	type SupportedChainId,
+	type TransferIntent,
 	type X402PaymentPayload,
+	isPolymarketTrade,
+	isTransferIntent,
 } from "@agent-intents/shared";
+import { buildPolymarketTx } from "@/lib/polymarket";
+import { PolymarketIntentDetail } from "./PolymarketIntentDetail";
 import { Button, Tag } from "@ledgerhq/lumen-ui-react";
 import { Check, Copy } from "@ledgerhq/lumen-ui-react/symbols";
 import { useState } from "react";
@@ -117,6 +124,32 @@ function ChainLogo({ chainId, className }: { chainId: number; className?: string
 		);
 	}
 
+	if (chainId === 137) {
+		return (
+			<div
+				className={cn(
+					"flex items-center justify-center size-24 rounded-full bg-[#8247E5]",
+					className,
+				)}
+				title="Polygon"
+			>
+				<svg
+					aria-hidden="true"
+					width="12"
+					height="12"
+					viewBox="0 0 38 33"
+					fill="none"
+					xmlns="http://www.w3.org/2000/svg"
+				>
+					<path
+						d="M29.4 11.7c-.8-.5-1.8-.5-2.5 0l-5.8 3.4-4 2.2-5.8 3.4c-.8.5-1.8.5-2.5 0l-4.6-2.7c-.8-.5-1.2-1.3-1.2-2.2v-5.3c0-.9.5-1.7 1.2-2.2l4.5-2.6c.8-.5 1.8-.5 2.5 0l4.5 2.6c.8.5 1.2 1.3 1.2 2.2v3.4l4-2.3v-3.4c0-.9-.5-1.7-1.2-2.2L12.8.5c-.8-.5-1.8-.5-2.5 0L3 4.1C2.2 4.6 1.8 5.4 1.8 6.3v7.1c0 .9.5 1.7 1.2 2.2l7 4c.8.5 1.8.5 2.5 0l5.8-3.3 4-2.3 5.8-3.3c.8-.5 1.8-.5 2.5 0l4.5 2.6c.8.5 1.2 1.3 1.2 2.2v5.3c0 .9-.5 1.7-1.2 2.2l-4.5 2.7c-.8.5-1.8.5-2.5 0l-4.5-2.7c-.8-.5-1.2-1.3-1.2-2.2v-3.4l-4 2.3v3.4c0 .9.5 1.7 1.2 2.2l7 4c.8.5 1.8.5 2.5 0l7-4c.8-.5 1.2-1.3 1.2-2.2v-7.1c0-.9-.5-1.7-1.2-2.2l-7-4z"
+						fill="white"
+					/>
+				</svg>
+			</div>
+		);
+	}
+
 	return (
 		<div
 			className={cn(
@@ -207,30 +240,34 @@ function UrgencyBadge({ urgency }: { urgency: string }) {
 
 function HeroSection({ intent }: { intent: Intent }) {
 	const { details } = intent;
-	const isX402 = !!details.x402?.accepted;
+	const isTransfer = isTransferIntent(details);
+	const isPolymarket = isPolymarketTrade(details);
+	const isX402 = isTransfer && !!details.x402?.accepted;
 
-	// For x402, derive chain from the x402 network
-	const x402ChainId = isX402 ? parseEip155ChainId(details.x402?.accepted?.network ?? "") : null;
+	const x402ChainId =
+		isX402 && isTransfer ? parseEip155ChainId(details.x402?.accepted?.network ?? "") : null;
 	const effectiveChainId = (
 		isX402 && x402ChainId ? x402ChainId : details.chainId
 	) as SupportedChainId;
 	const chain = SUPPORTED_CHAINS[effectiveChainId];
 
-	// Format amount - for x402 use atomic amount conversion
 	let displayAmount = details.amount;
-	let displayToken = details.token;
-	if (isX402 && details.x402?.accepted) {
-		const accepted = details.x402.accepted;
-		// USDC has 6 decimals
-		displayAmount = formatAtomicAmount(accepted.amount, 6);
-		displayToken = "USDC"; // x402 EVM exact scheme uses USDC
+	let displayToken = isPolymarket ? "USDC" : isTransfer ? details.token : "—";
+	if (isX402 && isTransfer && details.x402?.accepted) {
+		displayAmount = formatAtomicAmount(details.x402.accepted.amount, 6);
+		displayToken = "USDC";
 	}
+
+	const label = isPolymarket
+		? "Polymarket Trade"
+		: isX402
+			? "API Payment"
+			: null;
 
 	return (
 		<div className="flex flex-col items-center gap-8 py-16">
-			{/* Label for x402 API payments */}
-			{isX402 && (
-				<div className="body-3-semi-bold text-interactive uppercase tracking-wide">API Payment</div>
+			{label && (
+				<div className="body-3-semi-bold text-interactive uppercase tracking-wide">{label}</div>
 			)}
 			<div className="heading-2-semi-bold text-base">
 				{displayAmount} {displayToken}
@@ -251,9 +288,7 @@ function HeroSection({ intent }: { intent: Intent }) {
 // Recipient Section Component
 // =============================================================================
 
-function RecipientSection({ intent }: { intent: Intent }) {
-	const { details } = intent;
-
+function RecipientSection({ details }: { details: TransferIntent }) {
 	return (
 		<div className="rounded-lg bg-muted-transparent p-16">
 			<div className="body-3 text-muted mb-6">To</div>
@@ -274,8 +309,7 @@ function RecipientSection({ intent }: { intent: Intent }) {
 // X402 Payment Details Section Component
 // =============================================================================
 
-function X402PaymentSection({ intent }: { intent: Intent }) {
-	const { details } = intent;
+function X402PaymentSection({ details }: { details: TransferIntent }) {
 	const x402 = details.x402;
 
 	if (!x402?.accepted || !x402?.resource) return null;
@@ -345,8 +379,7 @@ function X402PaymentSection({ intent }: { intent: Intent }) {
 // Settlement Receipt Section Component (x402)
 // =============================================================================
 
-function SettlementReceiptSection({ intent }: { intent: Intent }) {
-	const { details } = intent;
+function SettlementReceiptSection({ details }: { details: TransferIntent }) {
 	const receipt = details.x402?.settlementReceipt;
 
 	if (!receipt) return null;
@@ -422,8 +455,7 @@ function SettlementReceiptSection({ intent }: { intent: Intent }) {
 // Merchant Section Component
 // =============================================================================
 
-function MerchantSection({ intent }: { intent: Intent }) {
-	const { details } = intent;
+function MerchantSection({ details }: { details: TransferIntent }) {
 	const { merchant, category, memo } = details;
 
 	if (!merchant && !category && !memo) return null;
@@ -467,6 +499,7 @@ function MerchantSection({ intent }: { intent: Intent }) {
 
 function AgentSection({ intent }: { intent: Intent }) {
 	const { details } = intent;
+	const resource = isTransferIntent(details) ? details.resource : undefined;
 
 	return (
 		<div className="flex flex-col gap-8">
@@ -482,9 +515,9 @@ function AgentSection({ intent }: { intent: Intent }) {
 				<span className="body-3 text-muted">{formatTimeAgo(intent.createdAt)}</span>
 			</div>
 
-			{details.resource && (
-				<div className="body-3 text-muted truncate" title={details.resource}>
-					Resource: {details.resource}
+			{resource && (
+				<div className="body-3 text-muted truncate" title={resource}>
+					Resource: {resource}
 				</div>
 			)}
 
@@ -503,8 +536,11 @@ function TechnicalDetailsSection({ intent }: { intent: Intent }) {
 	const [isExpanded, setIsExpanded] = useState(false);
 	const { details } = intent;
 
-	const tokenInfo = SUPPORTED_TOKENS[details.chainId as SupportedChainId]?.[details.token];
-	const tokenAddress = (details.tokenAddress as string | undefined) ?? tokenInfo?.address;
+	const token = isTransferIntent(details) ? details.token : "USDC";
+	const tokenInfo = SUPPORTED_TOKENS[details.chainId as SupportedChainId]?.[token];
+	const tokenAddress = isTransferIntent(details)
+		? ((details.tokenAddress as string | undefined) ?? tokenInfo?.address)
+		: tokenInfo?.address;
 
 	return (
 		<div className="border-t border-muted-subtle pt-16">
@@ -588,20 +624,24 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 	const [error, setError] = useState<string | null>(null);
 
 	const { details } = intent;
+	const isTransfer = isTransferIntent(details);
+	const isPolymarket = isPolymarketTrade(details);
 	const intentChainId = details.chainId as SupportedChainId;
 	const chain = SUPPORTED_CHAINS[intentChainId];
 	const isWrongChain = walletChainId !== null && walletChainId !== intentChainId;
 	const isPending = intent.status === "pending";
 
-	const tokenInfo = SUPPORTED_TOKENS[intentChainId]?.[details.token];
-	const tokenAddress =
-		(details.tokenAddress as `0x${string}` | undefined) ??
-		(tokenInfo?.address as `0x${string}` | undefined);
+	const token = isTransfer ? details.token : "USDC";
+	const tokenInfo = SUPPORTED_TOKENS[intentChainId]?.[token];
+	const tokenAddress = isTransfer
+		? ((details.tokenAddress as `0x${string}` | undefined) ??
+			(tokenInfo?.address as `0x${string}` | undefined))
+		: undefined;
 	const tokenDecimals = tokenInfo?.decimals ?? 6;
-	const isX402 = !!details.x402?.accepted;
+	const isX402 = isTransfer && !!details.x402?.accepted;
 
-	// Compute x402 chain ID for proper chain mismatch detection
-	const x402ChainId = isX402 ? parseEip155ChainId(details.x402?.accepted?.network ?? "") : null;
+	const x402ChainId =
+		isX402 && isTransfer ? parseEip155ChainId(details.x402?.accepted?.network ?? "") : null;
 	const effectiveChainId = isX402 && x402ChainId ? x402ChainId : intentChainId;
 	const effectiveChain = SUPPORTED_CHAINS[effectiveChainId as SupportedChainId];
 	const isEffectiveWrongChain = walletChainId !== null && walletChainId !== effectiveChainId;
@@ -609,8 +649,50 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 	const handleSign = async () => {
 		setError(null);
 
+		// Polymarket path: build PolyProxy tx and send
+		if (isPolymarket) {
+			if (!account) {
+				setError("Connect your Ledger device to sign this trade");
+				return;
+			}
+			if (isEffectiveWrongChain) {
+				setError(`Switch to ${effectiveChain?.name ?? "Polygon"} to sign`);
+				return;
+			}
+			setIsSigning(true);
+			try {
+				const tx = buildPolymarketTx(details as PolymarketTradeDetails);
+				const txHash = await sendTransaction(tx);
+				await updateStatus.mutateAsync({
+					id: intent.id,
+					status: "broadcasting",
+					txHash,
+				});
+				onClose();
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : "Transaction failed";
+				const lowerMsg = msg.toLowerCase();
+				const isUserRejection =
+					lowerMsg.includes("reject") ||
+					lowerMsg.includes("cancel") ||
+					lowerMsg.includes("denied") ||
+					lowerMsg.includes("user") ||
+					lowerMsg.includes("abort");
+				dismissDeviceAction();
+				if (isUserRejection) {
+					setError("Transaction cancelled");
+				} else {
+					setError(msg);
+				}
+			} finally {
+				setIsSigning(false);
+			}
+			return;
+		}
+
 		// x402 path: sign an EIP-712 authorization (EIP-3009), then store PAYMENT-SIGNATURE header.
-		if (isX402) {
+		if (isX402 && isTransfer) {
+			const transferDetails = details as TransferIntent;
 			if (!account) {
 				setError("Connect your Ledger device to authorize this payment");
 				return;
@@ -622,7 +704,7 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 				return;
 			}
 
-			const x402 = details.x402;
+			const x402 = transferDetails.x402;
 
 			// Strong validation of x402 requirements
 			const validation = validateX402ForSigning(x402?.resource, x402?.accepted);
@@ -801,14 +883,16 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 			return;
 		}
 
+		// At this point we know it's a transfer intent (polymarket + x402 returned above)
+		const transferDet = details as TransferIntent;
 		if (!tokenAddress) {
-			setError(`Unknown token address for ${details.token}`);
+			setError(`Unknown token address for ${token}`);
 			return;
 		}
 
 		const encodeResult = encodeERC20Transfer(
-			details.recipient as `0x${string}`,
-			details.amount,
+			transferDet.recipient as `0x${string}`,
+			transferDet.amount,
 			tokenDecimals,
 		);
 
@@ -932,17 +1016,26 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 // =============================================================================
 
 export function IntentDetailContent({ intent }: IntentDetailContentProps) {
-	const isX402 = !!intent.details.x402?.accepted;
-	const hasSettlementReceipt = !!intent.details.x402?.settlementReceipt;
+	const { details } = intent;
+	const isTransfer = isTransferIntent(details);
+	const isPolymarket = isPolymarketTrade(details);
+	const isX402 = isTransfer && !!details.x402?.accepted;
+	const hasSettlementReceipt = isTransfer && !!details.x402?.settlementReceipt;
 
 	return (
 		<div className="flex flex-col gap-16">
 			<HeroSection intent={intent} />
-			{/* Show settlement receipt if available (for confirmed x402 payments) */}
-			{hasSettlementReceipt && <SettlementReceiptSection intent={intent} />}
-			{/* Show x402 payment details for API payments, recipient for standard transfers */}
-			{isX402 ? <X402PaymentSection intent={intent} /> : <RecipientSection intent={intent} />}
-			<MerchantSection intent={intent} />
+			{hasSettlementReceipt && isTransfer && (
+				<SettlementReceiptSection details={details} />
+			)}
+			{isPolymarket ? (
+				<PolymarketIntentDetail details={details} />
+			) : isX402 && isTransfer ? (
+				<X402PaymentSection details={details} />
+			) : isTransfer ? (
+				<RecipientSection details={details} />
+			) : null}
+			{isTransfer && <MerchantSection details={details} />}
 			<AgentSection intent={intent} />
 			<TechnicalDetailsSection intent={intent} />
 		</div>

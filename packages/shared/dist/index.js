@@ -23,10 +23,21 @@ export function isValidTransition(from, to) {
     const allowed = INTENT_TRANSITIONS[from];
     return allowed ? allowed.includes(to) : false;
 }
+export function isPolymarketTrade(d) {
+    return d.type === "polymarket_trade";
+}
+export function isTransferIntent(d) {
+    return d.type === "transfer";
+}
 // =============================================================================
 // Supported Chains
 // =============================================================================
 export const SUPPORTED_CHAINS = {
+    137: {
+        name: "Polygon",
+        symbol: "MATIC",
+        explorer: "https://polygonscan.com",
+    },
     8453: {
         name: "Base",
         symbol: "ETH",
@@ -47,6 +58,13 @@ export const SUPPORTED_CHAINS = {
 // Supported Tokens
 // =============================================================================
 export const SUPPORTED_TOKENS = {
+    // Polygon mainnet
+    137: {
+        USDC: {
+            address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+            decimals: 6,
+        },
+    },
     // Base mainnet
     8453: {
         USDC: {
@@ -157,3 +175,17 @@ export function extractDomain(url) {
         return url;
     }
 }
+// =============================================================================
+// Polymarket Configuration
+// =============================================================================
+export const POLYMARKET_CONFIG = {
+    GAMMA_API_BASE: "https://gamma-api.polymarket.com",
+    /** PolyProxy contract — override via POLY_PROXY_ADDRESS / VITE_POLY_PROXY_ADDRESS env var */
+    POLY_PROXY_ADDRESS: "0x0000000000000000000000000000000000000000",
+    /** Oracle CRE contract — override via ORACLE_CRE_ADDRESS / VITE_ORACLE_CRE_ADDRESS env var */
+    ORACLE_CRE_ADDRESS: "0x0000000000000000000000000000000000000000",
+    /** Polymarket CTF Exchange on Polygon */
+    CTF_EXCHANGE: "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E",
+    /** Polygon chainId used by Polymarket */
+    CHAIN_ID: 137,
+};
