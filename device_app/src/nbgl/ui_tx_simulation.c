@@ -155,7 +155,7 @@ void ui_tx_simulation_opt_in(bool response_expected) {
     // add main content
     info.title = "Enable\nTransaction Check?";
     info.description =
-        "Get real-time warnings about risky Ethereum transactions. "
+        "Get real-time warnings about risky transactions. "
         "Powered by service providers.";
     info.subText = "By enabling, you accept T&Cs: ledger.com/tx-check";
     nbgl_layoutAddContentCenter(layoutCtx, &info);
