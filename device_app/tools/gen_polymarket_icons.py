@@ -116,32 +116,47 @@ def draw_p_logo(draw: ImageDraw.ImageDraw, size: int, fg: int = 255, bg: int = 0
 
 
 def make_gif_1bit(size: int, output_path: str) -> None:
-    """Create a 1-bit (black & white) GIF89a — for Nano X/S+ monochrome screens."""
+    """Create a 1-bit (black & white) GIF — for Nano X/S+ monochrome screens.
+
+    Ledger SDK expects: palette index 0 = black, index 1 = white, NO transparency.
+    """
     img = Image.new("P", (size, size), 0)
 
-    # Set up a minimal 2-colour palette: index 0 = black, index 1 = white
-    palette = [0, 0, 0,   255, 255, 255] + [0] * (256 * 3 - 6)
+    # 2-colour palette: index 0 = black, index 1 = white
+    palette = [0, 0, 0, 255, 255, 255] + [0] * (256 * 3 - 6)
     img.putpalette(palette)
 
     draw = ImageDraw.Draw(img)
     draw_p_logo(draw, size, fg=1, bg=0)
 
-    # transparency kwarg forces GIF89a header (GIF87a has no transparency block)
-    img.save(output_path, format="GIF", transparency=0)
+    img.save(output_path, format="GIF")
     print(f"  Saved 1-bit  {size}x{size} -> {output_path}")
 
 
 def make_gif_grayscale(size: int, output_path: str) -> None:
-    """Create a grayscale GIF89a — for Stax / Flex / Apex colour screens."""
-    # Draw in L mode first for clean rendering, then convert to P (palette)
+    """Create a grayscale GIF — for Stax / Flex / Apex colour screens.
+
+    Ledger SDK expects: palette index 0 = black (background), NO transparency.
+    Uses 2-color palette (black=0, white=1) matching existing chain icon format.
+    """
+    # Draw in L mode, then threshold to 2-color
     img_l = Image.new("L", (size, size), 0)
-    draw  = ImageDraw.Draw(img_l)
+    draw = ImageDraw.Draw(img_l)
     draw_p_logo(draw, size, fg=255, bg=0)
 
-    # Convert to palette mode for GIF encoding
-    img_p = img_l.convert("P")
-    # transparency kwarg forces GIF89a header
-    img_p.save(output_path, format="GIF", transparency=0)
+    # Convert to 2-color palette: index 0 = black, index 1 = white
+    img_p = Image.new("P", (size, size), 0)
+    palette = [0, 0, 0, 255, 255, 255] + [0] * (256 * 3 - 6)
+    img_p.putpalette(palette)
+
+    # Threshold: white pixels become index 1, black stays index 0
+    pixels = img_l.load()
+    out_pixels = img_p.load()
+    for y in range(size):
+        for x in range(size):
+            out_pixels[x, y] = 1 if pixels[x, y] > 128 else 0
+
+    img_p.save(output_path, format="GIF")
     print(f"  Saved gray   {size}x{size} -> {output_path}")
 
 
