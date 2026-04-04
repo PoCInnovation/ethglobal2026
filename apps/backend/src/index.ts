@@ -5,12 +5,40 @@
  * - Agents to submit transaction intents
  * - Live App to fetch pending intents
  * - Status updates when intents are signed/rejected
+ * - Polymarket scanner + Agent Council deliberations
  */
+
+// Load shared .env from web app (contains GEMINI_API_KEY, etc.)
+import { readFileSync as _readEnv } from "node:fs";
+import { resolve as _resolveEnv } from "node:path";
+try {
+	const envPath = _resolveEnv(import.meta.dirname ?? ".", "../../web/.env");
+	const envContent = _readEnv(envPath, "utf-8");
+	for (const line of envContent.split("\n")) {
+		const trimmed = line.trim();
+		if (!trimmed || trimmed.startsWith("#")) continue;
+		const eqIdx = trimmed.indexOf("=");
+		if (eqIdx === -1) continue;
+		const key = trimmed.slice(0, eqIdx).trim();
+		let val = trimmed.slice(eqIdx + 1).trim();
+		// Strip quotes
+		if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+			val = val.slice(1, -1);
+		}
+		if (!process.env[key]) {
+			process.env[key] = val;
+		}
+	}
+	console.log(`[Env] Loaded shared env from ${envPath}`);
+} catch {
+	// No shared .env found, that's OK — env vars should be set externally
+}
 
 import {
 	type CreateIntentRequest,
 	type Intent,
 	type IntentStatus,
+	type PolymarketTradeDetails,
 	type X402PaymentPayload,
 	getExplorerTxUrl,
 } from "@agent-intents/shared";
@@ -20,6 +48,14 @@ import { resolve } from "node:path";
 import cors from "cors";
 import express from "express";
 import { v4 as uuidv4 } from "uuid";
+import { scanMarkets, getMarketDetails } from "./polymarket-scanner.js";
+import {
+	deliberateAndPropose,
+	deliberate,
+	getDeliberation,
+	listDeliberations,
+	type ProposedTrade,
+} from "./agent-council.js";
 
 const app = express();
 const PORT = process.env.PORT || 3005;
@@ -229,9 +265,11 @@ app.post("/api/intents", (req, res) => {
 		const intent = createIntent(body, userId);
 		intents.set(intent.id, intent);
 
-		console.log(
-			`[Intent Created] ${intent.id} by ${intent.agentName}: ${intent.details.amount} ${intent.details.token} to ${intent.details.recipient}`,
-		);
+		const d = intent.details;
+		const logDetails = d.type === "transfer"
+			? `${d.amount} ${d.token} to ${d.recipient}`
+			: `${d.type}: ${d.amount}`;
+		console.log(`[Intent Created] ${intent.id} by ${intent.agentName}: ${logDetails}`);
 
 		res.status(201).json({ success: true, intent });
 	} catch (error) {
@@ -332,7 +370,7 @@ app.post("/api/intents/status", (req, res) => {
 		intent.reviewedAt = now;
 	}
 
-	if (paymentSignatureHeader || paymentPayload) {
+	if ((paymentSignatureHeader || paymentPayload) && intent.details.type === "transfer") {
 		const existing = intent.details.x402;
 		const base = paymentPayload
 			? { resource: paymentPayload.resource, accepted: paymentPayload.accepted }
@@ -394,7 +432,7 @@ app.patch("/api/intents/:id/status", (req, res) => {
 	}
 
 	// Persist x402 proof data inside the details blob if provided
-	if (paymentSignatureHeader || paymentPayload) {
+	if ((paymentSignatureHeader || paymentPayload) && intent.details.type === "transfer") {
 		const existing = intent.details.x402;
 		const base = paymentPayload
 			? { resource: paymentPayload.resource, accepted: paymentPayload.accepted }
@@ -954,6 +992,111 @@ app.post("/api/polymarket/order", async (req, res) => {
 	}
 });
 
+// ============ Polymarket Scanner + Agent Council ============
+
+// List market opportunities with trading signals
+app.get("/api/polymarket/opportunities", async (req, res) => {
+	try {
+		const limit = Number(req.query.limit) || 20;
+		const sortBy = (req.query.sortBy as string) || "volume";
+		const markets = await scanMarkets({ limit, sortBy: sortBy as any });
+		res.json({ success: true, markets });
+	} catch (err) {
+		console.error("[Scanner] Error:", err);
+		res.status(500).json({ success: false, error: "Failed to scan markets" });
+	}
+});
+
+// Launch a council deliberation on a market
+app.post("/api/polymarket/council/deliberate", async (req, res) => {
+	try {
+		const { conditionId, outcome, reason } = req.body as {
+			conditionId?: string;
+			outcome?: string;
+			reason?: string;
+		};
+
+		if (!conditionId) {
+			res.status(400).json({ success: false, error: "Missing conditionId" });
+			return;
+		}
+
+		const market = await getMarketDetails(conditionId);
+		if (!market) {
+			res.status(404).json({ success: false, error: "Market not found" });
+			return;
+		}
+
+		const userReason = outcome
+			? `Agent proposes ${outcome} — ${reason || "no reason given"}`
+			: reason || "Analyze this opportunity";
+
+		// Intent creation callback — injects into the existing intent queue
+		const createIntentFn = (trade: ProposedTrade, mkt: typeof market): string => {
+			const now = new Date().toISOString();
+			const id = `int_${Date.now()}_${uuidv4().slice(0, 8)}`;
+
+			const selectedOutcome = mkt.outcomes.find(
+				(o) => o.name.toLowerCase() === trade.outcome.toLowerCase(),
+			);
+
+			const details: PolymarketTradeDetails = {
+				type: "polymarket_trade",
+				conditionId: mkt.conditionId,
+				marketTitle: mkt.question,
+				outcome: trade.outcome,
+				amount: trade.amount,
+				outcomePrice: selectedOutcome?.price,
+				tokenId: selectedOutcome?.tokenId,
+				chainId: 137,
+				memo: trade.reasoning,
+			};
+
+			const intent: Intent = {
+				id,
+				userId: "council-agent",
+				agentId: "council",
+				agentName: "Agent Council",
+				details,
+				urgency: "normal",
+				status: "pending",
+				createdAt: now,
+				expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+				statusHistory: [{ status: "pending", timestamp: now }],
+			};
+
+			intents.set(id, intent);
+			console.log(`[Council] Intent created in queue: ${id}`);
+			return id;
+		};
+
+		const deliberation = await deliberateAndPropose(market, userReason, createIntentFn);
+
+		res.json({ success: true, deliberation });
+	} catch (err) {
+		console.error("[Council] Deliberation error:", err);
+		res.status(500).json({
+			success: false,
+			error: err instanceof Error ? err.message : "Deliberation failed",
+		});
+	}
+});
+
+// List all past deliberations
+app.get("/api/polymarket/council/deliberations", (_req, res) => {
+	res.json({ success: true, deliberations: listDeliberations() });
+});
+
+// Get a specific deliberation
+app.get("/api/polymarket/council/deliberations/:id", (req, res) => {
+	const d = getDeliberation(req.params.id);
+	if (!d) {
+		res.status(404).json({ success: false, error: "Deliberation not found" });
+		return;
+	}
+	res.json({ success: true, deliberation: d });
+});
+
 // ============ Demo/Debug ============
 
 // List all intents (debug endpoint)
@@ -991,6 +1134,51 @@ app.listen(PORT, () => {
 ║    GET    /api/agents/:id           Get agent             ║
 ║    DELETE /api/agents/:id           Revoke agent          ║
 ║                                                           ║
+║  🔮 Polymarket Council:                                   ║
+║    GET  /api/polymarket/opportunities  Scan markets       ║
+║    POST /api/polymarket/council/deliberate  Deliberate    ║
+║    GET  /api/polymarket/council/deliberations  History    ║
+║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
+
+	// ============ Auto-Scanner ============
+	// Run in background every 60s, stores latest scan results in memory
+	let latestScanResults: Awaited<ReturnType<typeof scanMarkets>> = [];
+	let scanRunning = false;
+
+	async function runAutoScan() {
+		if (scanRunning) {
+			console.log("[AutoScan] ⏭️ Skipping — previous scan still running");
+			return;
+		}
+		scanRunning = true;
+		try {
+			latestScanResults = await scanMarkets({ limit: 15, sortBy: "volume" });
+		} catch (err) {
+			console.error("[AutoScan] ❌ Error:", err instanceof Error ? err.message : err);
+		} finally {
+			scanRunning = false;
+		}
+	}
+
+	// Initial scan after 2s (let server finish startup)
+	setTimeout(() => {
+		runAutoScan();
+	}, 2000);
+
+	// Then every 60s
+	setInterval(() => {
+		runAutoScan();
+	}, 60_000);
+
+	// Expose cached scan results (faster than re-fetching Gamma)
+	app.get("/api/polymarket/scan-cache", (_req, res) => {
+		res.json({
+			success: true,
+			count: latestScanResults.length,
+			markets: latestScanResults,
+			nextScanIn: "~60s",
+		});
+	});
 });
