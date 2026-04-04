@@ -265,9 +265,9 @@ export async function runCouncilDeliberation(
         `Here are the agents' final arguments:`,
         allMessages,
         ``,
-        `Explain in 1-2 sentences WHY the council ${verdict} the trade. Be specific: mention the concrete reasons (e.g. "price too high", "no edge", "liquidity risk", "positive EV"). Write as if talking to the trader. No preamble.`,
+        `In ONE sentence (max 25 words), explain WHY. Be specific and direct. No agent names, no numbers, no preamble.`,
       ].join("\n"),
-      config: { maxOutputTokens: 120 },
+      config: { maxOutputTokens: 50 },
     });
     summary = (summaryResponse.text ?? "").trim();
     console.log(`[council/orchestrator] Summary: ${summary}`);
