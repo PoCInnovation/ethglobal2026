@@ -1,4 +1,5 @@
 import { IntentList } from "@/components/intents";
+import { PolymarketCouncil } from "@/components/council/PolymarketCouncil";
 import { TestPolymarketOrder } from "@/components/TestPolymarketOrder";
 import { createFileRoute } from "@tanstack/react-router";
 
@@ -14,6 +15,9 @@ function HomePage() {
 				<h1 className="heading-1-semi-bold text-base">Agent Payments with Ledger</h1>
 				<p className="body-1 text-muted">Agents propose, humans sign with hardware</p>
 			</div>
+
+			{/* Polymarket Council — scan + deliberation UI */}
+			<PolymarketCouncil />
 
 			{/* Test Polymarket signing (dev only) */}
 			<TestPolymarketOrder />
