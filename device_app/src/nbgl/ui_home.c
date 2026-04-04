@@ -43,7 +43,7 @@ enum {
 
 // settings definition
 static const char *const infoTypes[SETTING_INFO_NB] = {"Version", "Developer", "Copyright"};
-static const char *const infoContents[SETTING_INFO_NB] = {APPVERSION, "Ledger", "Ledger (c) 2025"};
+static const char *const infoContents[SETTING_INFO_NB] = {APPVERSION, "PoCInnovation", "PoCInnovation (c) 2025"};
 
 static nbgl_contentInfoList_t infoList = {0};
 static nbgl_contentSwitch_t switches[SETTINGS_SWITCHES_NB] = {0};
@@ -255,9 +255,10 @@ static void get_appname_and_tagline(const char **appname, const char **tagline) 
                 *tagline = g_tag_line;
             }
         }
-    } else {  // Ethereum app
+    } else {  // Polyledger standalone
         mainnet_chain_id = ETHEREUM_MAINNET_CHAINID;
         *appname = get_network_name_from_chain_id(&mainnet_chain_id);
+        *tagline = "This app enables clear\nsigning transactions for\nthe Polymarket dApp.";
     }
 }
 
