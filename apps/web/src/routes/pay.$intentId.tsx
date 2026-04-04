@@ -1,7 +1,7 @@
 import { IntentDetailContent } from "@/components/intents/IntentDetailContent";
 import { Spinner } from "@/components/ui/Spinner";
 import { useLedger } from "@/lib/ledger-provider";
-import { type AuthStatus, useWalletAuth } from "@/lib/wallet-auth";
+import { useWalletAuth } from "@/lib/wallet-auth";
 import { intentQueryOptions } from "@/queries/intents";
 import { Button } from "@ledgerhq/lumen-ui-react";
 import { Devices } from "@ledgerhq/lumen-ui-react/symbols";

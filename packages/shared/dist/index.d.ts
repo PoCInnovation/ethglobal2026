@@ -116,6 +116,7 @@ export interface PolymarketTradeDetails {
     outcome: "Yes" | "No";
     amount: string;
     outcomePrice?: number;
+    tokenId?: string;
     chainId: 137;
     memo?: string;
 }
@@ -267,12 +268,13 @@ export declare function formatAtomicAmount(atomicAmount: string, decimals: numbe
 export declare function extractDomain(url: string): string;
 export declare const POLYMARKET_CONFIG: {
     readonly GAMMA_API_BASE: "https://gamma-api.polymarket.com";
-    /** PolyProxy contract — override via POLY_PROXY_ADDRESS / VITE_POLY_PROXY_ADDRESS env var */
-    readonly POLY_PROXY_ADDRESS: `0x${string}`;
+    readonly CLOB_API_BASE: "https://clob.polymarket.com";
     /** Oracle CRE contract — override via ORACLE_CRE_ADDRESS / VITE_ORACLE_CRE_ADDRESS env var */
     readonly ORACLE_CRE_ADDRESS: `0x${string}`;
     /** Polymarket CTF Exchange on Polygon */
     readonly CTF_EXCHANGE: `0x${string}`;
+    /** Polymarket Neg Risk CTF Exchange on Polygon */
+    readonly NEG_RISK_CTF_EXCHANGE: `0x${string}`;
     /** Polygon chainId used by Polymarket */
     readonly CHAIN_ID: 137;
 };

@@ -1,46 +1,89 @@
 /**
- * Polymarket transaction helpers — ABI for PolyProxy and tx builder.
+ * Polymarket CLOB Order helpers — builds EIP-712 typed data for signing
+ * via signTypedDataV4 (Ledger Polymarket app + MCP clear signing).
  */
 
 import type { PolymarketTradeDetails } from "@agent-intents/shared";
 import { POLYMARKET_CONFIG } from "@agent-intents/shared";
-import { encodeFunctionData, parseUnits } from "viem";
+import { parseUnits } from "viem";
 
-function getPolyProxyAddress(): `0x${string}` {
-	const envAddr = import.meta.env.VITE_POLY_PROXY_ADDRESS as string | undefined;
-	return (envAddr?.startsWith("0x") ? envAddr : POLYMARKET_CONFIG.POLY_PROXY_ADDRESS) as `0x${string}`;
+const POLYMARKET_ORDER_TYPES = {
+	EIP712Domain: [
+		{ name: "name", type: "string" },
+		{ name: "version", type: "string" },
+		{ name: "chainId", type: "uint256" },
+		{ name: "verifyingContract", type: "address" },
+	],
+	Order: [
+		{ name: "salt", type: "uint256" },
+		{ name: "maker", type: "address" },
+		{ name: "signer", type: "address" },
+		{ name: "taker", type: "address" },
+		{ name: "tokenId", type: "uint256" },
+		{ name: "makerAmount", type: "uint256" },
+		{ name: "takerAmount", type: "uint256" },
+		{ name: "expiration", type: "uint256" },
+		{ name: "nonce", type: "uint256" },
+		{ name: "feeRateBps", type: "uint256" },
+		{ name: "side", type: "uint8" },
+		{ name: "signatureType", type: "uint8" },
+	],
+} as const;
+
+function randomSalt(): string {
+	const bytes = new Uint8Array(32);
+	crypto.getRandomValues(bytes);
+	return BigInt(
+		`0x${Array.from(bytes)
+			.map((b) => b.toString(16).padStart(2, "0"))
+			.join("")}`,
+	).toString();
 }
 
-const POLY_PROXY_ABI = [
-	{
-		name: "placePolymarketOrder",
-		type: "function",
-		stateMutability: "nonpayable",
-		inputs: [
-			{ name: "conditionId", type: "bytes32" },
-			{ name: "marketTitle", type: "string" },
-			{ name: "outcome", type: "uint8" },
-			{ name: "amount", type: "uint256" },
-		],
-		outputs: [],
-	},
-] as const;
+/**
+ * Build EIP-712 typed data for a Polymarket CLOB Order.
+ * Requires `tokenId` from the enriched intent details.
+ */
+export function buildPolymarketOrderTypedData(
+	details: PolymarketTradeDetails,
+	makerAddress: string,
+) {
+	if (!details.tokenId) {
+		throw new Error("tokenId is required to build a Polymarket order — was the intent enriched?");
+	}
 
-export function buildPolymarketTx(details: PolymarketTradeDetails) {
-	const data = encodeFunctionData({
-		abi: POLY_PROXY_ABI,
-		functionName: "placePolymarketOrder",
-		args: [
-			details.conditionId as `0x${string}`,
-			details.marketTitle,
-			details.outcome === "Yes" ? 0 : 1,
-			parseUnits(details.amount, 6),
-		],
-	});
+	const usdcAtomicAmount = parseUnits(details.amount, 6);
+	const price = details.outcomePrice ?? 0.5;
+	const takerAmount = BigInt(Math.floor(Number(usdcAtomicAmount) / price));
+
+	const expirationSec = Math.floor(Date.now() / 1000) + 86400; // 24h
+
+	const domain = {
+		name: "ClobExchange",
+		version: "1",
+		chainId: POLYMARKET_CONFIG.CHAIN_ID,
+		verifyingContract: POLYMARKET_CONFIG.CTF_EXCHANGE,
+	};
+
+	const message = {
+		salt: randomSalt(),
+		maker: makerAddress,
+		signer: makerAddress,
+		taker: "0x0000000000000000000000000000000000000000",
+		tokenId: details.tokenId,
+		makerAmount: usdcAtomicAmount.toString(),
+		takerAmount: takerAmount.toString(),
+		expiration: String(expirationSec),
+		nonce: "0",
+		feeRateBps: "0",
+		side: details.outcome === "Yes" ? 0 : 1,
+		signatureType: 0,
+	};
 
 	return {
-		to: getPolyProxyAddress(),
-		data,
-		value: "0x0" as const,
+		types: POLYMARKET_ORDER_TYPES,
+		primaryType: "Order" as const,
+		domain,
+		message,
 	};
 }

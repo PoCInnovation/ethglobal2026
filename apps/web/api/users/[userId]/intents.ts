@@ -23,6 +23,8 @@ const VALID_STATUSES: IntentStatus[] = [
 	"approved",
 	"rejected",
 	"broadcasting",
+	"authorized",
+	"executing",
 	"confirmed",
 	"failed",
 	"expired",

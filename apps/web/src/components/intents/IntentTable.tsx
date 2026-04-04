@@ -19,7 +19,8 @@ import {
 	isPolymarketTrade,
 	isTransferIntent,
 } from "@agent-intents/shared";
-import { buildPolymarketTx } from "@/lib/polymarket";
+import { buildPolymarketOrderTypedData } from "@/lib/polymarket";
+import type { PolymarketTradeDetails } from "@agent-intents/shared";
 import { Button } from "@ledgerhq/lumen-ui-react";
 import { useState } from "react";
 import { verifyTypedData } from "viem";
@@ -302,27 +303,29 @@ function IntentRow({ intent, onSelectIntent }: IntentRowProps) {
 	const handleSign = async () => {
 		setError(null);
 
-		// Polymarket path: build PolyProxy tx and send
+		// Polymarket path: build EIP-712 Order and sign via signTypedDataV4
+		// Chain validation is skipped: chainId is in the EIP-712 domain.
 		if (isPolymarket) {
 			if (!account) {
 				setError("Connect your Ledger to sign");
 				return;
 			}
-			if (isWrongChain) {
-				setError(`Switch to ${chain?.name ?? "Polygon"} to sign`);
+			const polyDetails = details as PolymarketTradeDetails;
+			if (!polyDetails.tokenId) {
+				setError("Market data incomplete (missing tokenId)");
 				return;
 			}
 			setIsSigning(true);
 			try {
-				const tx = buildPolymarketTx(details);
-				const txHash = await sendTransaction(tx);
+				const typedData = buildPolymarketOrderTypedData(polyDetails, account);
+				const signature = await signTypedDataV4(typedData);
 				await updateStatus.mutateAsync({
 					id: intent.id,
-					status: "broadcasting",
-					txHash,
+					status: "authorized",
+					note: `polymarket_order_signature:${signature}`,
 				});
 			} catch (err) {
-				const msg = err instanceof Error ? err.message : "Transaction failed";
+				const msg = err instanceof Error ? err.message : "Signing failed";
 				const lower = msg.toLowerCase();
 				const rejected =
 					lower.includes("reject") || lower.includes("cancel") || lower.includes("denied") || lower.includes("user") || lower.includes("abort");

@@ -176,6 +176,7 @@ export interface PolymarketTradeDetails {
 	outcome: "Yes" | "No";
 	amount: string; // USDC amount (human-readable, e.g. "50")
 	outcomePrice?: number; // Current price (e.g. 0.65), enriched by backend
+	tokenId?: string; // CLOB token ID for the selected outcome, enriched by backend
 	chainId: 137; // Polygon
 	memo?: string; // Agent justification
 }
@@ -484,12 +485,13 @@ export function extractDomain(url: string): string {
 
 export const POLYMARKET_CONFIG = {
 	GAMMA_API_BASE: "https://gamma-api.polymarket.com",
-	/** PolyProxy contract — override via POLY_PROXY_ADDRESS / VITE_POLY_PROXY_ADDRESS env var */
-	POLY_PROXY_ADDRESS: "0x0000000000000000000000000000000000000000" as `0x${string}`,
+	CLOB_API_BASE: "https://clob.polymarket.com",
 	/** Oracle CRE contract — override via ORACLE_CRE_ADDRESS / VITE_ORACLE_CRE_ADDRESS env var */
-	ORACLE_CRE_ADDRESS: "0x0000000000000000000000000000000000000000" as `0x${string}`,
+	ORACLE_CRE_ADDRESS: "0x8C9597CB3B336eEEC8fd61cd0c277336eddb525e" as `0x${string}`,
 	/** Polymarket CTF Exchange on Polygon */
 	CTF_EXCHANGE: "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E" as `0x${string}`,
+	/** Polymarket Neg Risk CTF Exchange on Polygon */
+	NEG_RISK_CTF_EXCHANGE: "0xC5d563A36AE78145C45a50134d48A1215220f80a" as `0x${string}`,
 	/** Polygon chainId used by Polymarket */
 	CHAIN_ID: 137 as const,
 } as const;

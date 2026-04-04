@@ -180,12 +180,13 @@ export function extractDomain(url) {
 // =============================================================================
 export const POLYMARKET_CONFIG = {
     GAMMA_API_BASE: "https://gamma-api.polymarket.com",
-    /** PolyProxy contract — override via POLY_PROXY_ADDRESS / VITE_POLY_PROXY_ADDRESS env var */
-    POLY_PROXY_ADDRESS: "0x0000000000000000000000000000000000000000",
+    CLOB_API_BASE: "https://clob.polymarket.com",
     /** Oracle CRE contract — override via ORACLE_CRE_ADDRESS / VITE_ORACLE_CRE_ADDRESS env var */
-    ORACLE_CRE_ADDRESS: "0x0000000000000000000000000000000000000000",
+    ORACLE_CRE_ADDRESS: "0x8C9597CB3B336eEEC8fd61cd0c277336eddb525e",
     /** Polymarket CTF Exchange on Polygon */
     CTF_EXCHANGE: "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E",
+    /** Polymarket Neg Risk CTF Exchange on Polygon */
+    NEG_RISK_CTF_EXCHANGE: "0xC5d563A36AE78145C45a50134d48A1215220f80a",
     /** Polygon chainId used by Polymarket */
     CHAIN_ID: 137,
 };

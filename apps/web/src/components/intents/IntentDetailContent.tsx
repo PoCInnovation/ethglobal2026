@@ -24,7 +24,7 @@ import {
 	isPolymarketTrade,
 	isTransferIntent,
 } from "@agent-intents/shared";
-import { buildPolymarketTx } from "@/lib/polymarket";
+import { buildPolymarketOrderTypedData } from "@/lib/polymarket";
 import { PolymarketIntentDetail } from "./PolymarketIntentDetail";
 import { Button, Tag } from "@ledgerhq/lumen-ui-react";
 import { Check, Copy } from "@ledgerhq/lumen-ui-react/symbols";
@@ -649,28 +649,31 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 	const handleSign = async () => {
 		setError(null);
 
-		// Polymarket path: build PolyProxy tx and send
+		// Polymarket path: build EIP-712 Order and sign via signTypedDataV4
+		// Chain validation is skipped here: the chainId is embedded in the EIP-712
+		// domain and enforced by the Polymarket exchange contract.
 		if (isPolymarket) {
 			if (!account) {
 				setError("Connect your Ledger device to sign this trade");
 				return;
 			}
-			if (isEffectiveWrongChain) {
-				setError(`Switch to ${effectiveChain?.name ?? "Polygon"} to sign`);
+			const polyDetails = details as PolymarketTradeDetails;
+			if (!polyDetails.tokenId) {
+				setError("Market data incomplete (missing tokenId). Please try again.");
 				return;
 			}
 			setIsSigning(true);
 			try {
-				const tx = buildPolymarketTx(details as PolymarketTradeDetails);
-				const txHash = await sendTransaction(tx);
+				const typedData = buildPolymarketOrderTypedData(polyDetails, account);
+				const signature = await signTypedDataV4(typedData);
 				await updateStatus.mutateAsync({
 					id: intent.id,
-					status: "broadcasting",
-					txHash,
+					status: "authorized",
+					note: `polymarket_order_signature:${signature}`,
 				});
 				onClose();
 			} catch (err) {
-				const msg = err instanceof Error ? err.message : "Transaction failed";
+				const msg = err instanceof Error ? err.message : "Signing failed";
 				const lowerMsg = msg.toLowerCase();
 				const isUserRejection =
 					lowerMsg.includes("reject") ||
@@ -680,7 +683,7 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 					lowerMsg.includes("abort");
 				dismissDeviceAction();
 				if (isUserRejection) {
-					setError("Transaction cancelled");
+					setError("Trade signing cancelled");
 				} else {
 					setError(msg);
 				}

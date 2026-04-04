@@ -298,6 +298,7 @@ function AgentContextPage() {
 						Poll until{" "}
 						<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">status</code> is one of
 						the terminal states:{" "}
+						<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">authorized</code> (Polymarket order signed),{" "}
 						<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">confirmed</code>,{" "}
 						<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">rejected</code>,{" "}
 						<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">failed</code>, or{" "}
@@ -486,10 +487,12 @@ function AgentContextPage() {
 
 				<p className="body-2 text-muted">
 					The backend automatically enriches the intent with the market title (
-					<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">marketTitle</code>) and
+					<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">marketTitle</code>),
 					current outcome price (
-					<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">outcomePrice</code>)
-					from the Polymarket Gamma API.
+					<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">outcomePrice</code>),
+					and CLOB token ID (
+					<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">tokenId</code>)
+					from the Polymarket CLOB API.
 				</p>
 
 				<p className="body-2 text-muted">

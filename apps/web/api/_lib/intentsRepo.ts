@@ -442,7 +442,7 @@ export async function updateIntentStatus(
 	const nowIso = new Date().toISOString();
 	const currentStatus = intentRow.status as IntentStatus;
 	if (!isValidTransition(currentStatus, status)) {
-		throw new Error(`Invalid status transition: ${currentStatus} -> ${status}`);
+		throw new IntentStatusConflictError();
 	}
 
 	const ownConnection = !dbClient;
@@ -566,21 +566,3 @@ export async function updateIntentStatus(
 	return getIntentById(id, dbClient?.sql ?? sql);
 }
 
-export async function getAllIntents(db: DbExecutor = sql): Promise<Intent[]> {
-	const result = await db`
-    SELECT * FROM intents
-    ORDER BY created_at DESC
-    LIMIT 100
-  `;
-
-	const rows = result.rows as IntentRow[];
-	const intentIds = rows.map((row) => row.id);
-	const historyMap = await getStatusHistoriesBatch(intentIds, db);
-
-	return rows.map((row) => rowToIntent(row, historyMap.get(row.id) ?? []));
-}
-
-export async function deleteAllIntents(db: DbExecutor = sql): Promise<void> {
-	await db`DELETE FROM intent_status_history`;
-	await db`DELETE FROM intents`;
-}

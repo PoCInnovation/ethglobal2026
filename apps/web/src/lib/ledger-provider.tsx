@@ -39,7 +39,7 @@ import {
 	createPublicClient,
 	serializeTransaction,
 } from "viem";
-import { base, baseSepolia, sepolia } from "viem/chains";
+import { base, baseSepolia, polygon, sepolia } from "viem/chains";
 import {
 	isPolymarketOrder,
 	buildPolymarketContext,
@@ -169,6 +169,7 @@ function isWebBluetoothAvailable(): boolean {
 // =============================================================================
 
 const CHAIN_MAP: Record<number, Chain> = {
+	137: polygon,
 	8453: base,
 	84532: baseSepolia,
 	11155111: sepolia,
@@ -184,6 +185,12 @@ function getChain(chainId: number): Chain {
 function getRpcUrl(chainId: number): string {
 	if (chainId === 8453) {
 		const customRpc = import.meta.env.VITE_BASE_MAINNET_RPC_URL;
+		if (typeof customRpc === "string" && customRpc.trim().length > 0) {
+			return customRpc.trim();
+		}
+	}
+	if (chainId === 137) {
+		const customRpc = import.meta.env.VITE_POLYGON_RPC_URL;
 		if (typeof customRpc === "string" && customRpc.trim().length > 0) {
 			return customRpc.trim();
 		}
@@ -668,7 +675,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 	// Ensure the Ethereum app is open (shared by connect + reconnect flows)
 	// Returns true if the app was already open (via skipOpenApp probe).
 	// -----------------------------------------------------------------------
-	const ensureEthereumApp = useCallback(async (): Promise<boolean> => {
+	const ensureEthereumApp = useCallback(async (appName: "Ethereum" | "Polymarket" = "Ethereum"): Promise<boolean> => {
 		const sessionId = sessionIdRef.current;
 		if (!sessionId) {
 			throw new Error("No device connected.");
@@ -744,8 +751,8 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 		) {
 			const currentApp = (readyState as { currentApp?: { name: string } }).currentApp;
 			console.log("[ensureEthereumApp] currentApp:", currentApp?.name);
-			if (currentApp?.name === "Polymarket") {
-				console.log("[ensureEthereumApp] Polymarket app already open — skipping OpenApp");
+			if (currentApp?.name === appName) {
+				console.log(`[ensureEthereumApp] ${appName} app already open — skipping OpenApp`);
 				return true;
 			}
 		}
@@ -753,10 +760,10 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 		// ---------------------------------------------------------------
 		// Step 3: App is not open — use OpenAppDeviceAction (no catalog check).
 		// ---------------------------------------------------------------
-		console.log("[ensureEthereumApp] opening Polymarket app via OpenAppDeviceAction");
+		console.log(`[ensureEthereumApp] opening ${appName} app via OpenAppDeviceAction`);
 		const openAppAction = new OpenAppDeviceAction({
 			input: {
-				appName: "Polymarket",
+				appName,
 			},
 		});
 
@@ -1484,12 +1491,15 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 				return signatureToHex(signature);
 			};
 
+			const isPolyOrder = isPolymarketOrder(parsed.primaryType, parsed.domain as Record<string, unknown>);
+			const targetApp = isPolyOrder ? "Polymarket" : "Ethereum";
+
 			try {
 				try {
 					return await doSign();
 				} catch (firstErr) {
 					if (!isAppNotOpenError(firstErr)) throw firstErr;
-					await ensureEthereumApp();
+					await ensureEthereumApp(targetApp);
 					return await doSign();
 				}
 			} catch (err) {
