@@ -5,6 +5,8 @@ build/
 
 # Nano NBGL reversed icon for Home Screen
 glyphs/home_chain_*
+# Exception: Polymarket chain 1 home icon is hand-crafted, not auto-generated
+!glyphs/home_chain_1_14px.gif
 
 # Unit tests and code coverage
 tests/unit/build/
