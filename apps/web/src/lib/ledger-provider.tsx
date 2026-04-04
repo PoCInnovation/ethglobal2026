@@ -9,7 +9,7 @@ import {
 	DeviceStatus,
 	type DiscoveredDevice,
 	type DmkError,
-	OpenAppWithDependenciesDeviceAction,
+	OpenAppDeviceAction,
 	UserInteractionRequired,
 	hexaStringToBuffer,
 } from "@ledgerhq/device-management-kit";
@@ -744,20 +744,19 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 		) {
 			const currentApp = (readyState as { currentApp?: { name: string } }).currentApp;
 			console.log("[ensureEthereumApp] currentApp:", currentApp?.name);
-			if (currentApp?.name === "Ethereum") {
-				console.log("[ensureEthereumApp] Ethereum app already open — skipping OpenApp");
+			if (currentApp?.name === "Polymarket") {
+				console.log("[ensureEthereumApp] Polymarket app already open — skipping OpenApp");
 				return true;
 			}
 		}
 
 		// ---------------------------------------------------------------
-		// Step 3: Ethereum app is not open — use OpenAppWithDependencies.
+		// Step 3: App is not open — use OpenAppDeviceAction (no catalog check).
 		// ---------------------------------------------------------------
-		console.log("[ensureEthereumApp] opening Ethereum app via OpenAppWithDependencies");
-		const openAppAction = new OpenAppWithDependenciesDeviceAction({
+		console.log("[ensureEthereumApp] opening Polymarket app via OpenAppDeviceAction");
+		const openAppAction = new OpenAppDeviceAction({
 			input: {
-				application: { name: "Ethereum" },
-				dependencies: [],
+				appName: "Polymarket",
 			},
 		});
 
