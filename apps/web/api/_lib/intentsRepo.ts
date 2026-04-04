@@ -14,6 +14,7 @@ import {
 	type Intent,
 	type IntentStatus,
 	type IntentUrgency,
+	type IntentDetails,
 	type TransferIntent,
 	type X402PaymentPayload,
 	type X402SettlementReceipt,
@@ -27,7 +28,7 @@ interface IntentRow {
 	user_id: string;
 	agent_id: string;
 	agent_name: string;
-	details: TransferIntent;
+	details: IntentDetails;
 	urgency: IntentUrgency;
 	status: IntentStatus;
 	created_at: Date;
@@ -222,7 +223,7 @@ export async function createIntent(
 		userId: string;
 		agentId: string;
 		agentName: string;
-		details: TransferIntent;
+		details: IntentDetails;
 		urgency: IntentUrgency;
 		expiresAt?: string;
 		trustChainId?: string;
@@ -453,14 +454,14 @@ export async function updateIntentStatus(
 		await client.sql`BEGIN`;
 
 		if (paymentSignatureHeader || paymentPayload || settlementReceipt) {
-			const existingX402 = intentRow.details.x402;
+			const existingX402 = intentRow.details.type === "transfer" ? intentRow.details.x402 : undefined;
 			const base = paymentPayload
 				? { resource: paymentPayload.resource, accepted: paymentPayload.accepted }
 				: existingX402;
 
-			if (base) {
+			if (base && intentRow.details.type === "transfer") {
 				const nextDetails: TransferIntent = {
-					...intentRow.details,
+					...(intentRow.details as TransferIntent),
 					x402: {
 						...base,
 						...(existingX402 ?? {}),

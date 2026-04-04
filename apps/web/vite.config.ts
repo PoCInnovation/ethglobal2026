@@ -11,6 +11,8 @@ export default defineConfig(({ command }) => ({
 	resolve: {
 		alias: {
 			"@": path.resolve(__dirname, "./src"),
+			// Use workspace source so dev never serves stale `dist/` (e.g. missing POLYMARKET_CONFIG)
+			"@agent-intents/shared": path.resolve(__dirname, "../../packages/shared/src/index.ts"),
 		},
 	},
 	server: {

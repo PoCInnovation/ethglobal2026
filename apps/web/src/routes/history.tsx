@@ -7,7 +7,7 @@ import { formatAddress } from "@/lib/utils";
 import { useWalletAuth } from "@/lib/wallet-auth";
 import { intentsQueryOptions } from "@/queries/intents";
 import type { Intent, SupportedChainId } from "@agent-intents/shared";
-import { SUPPORTED_CHAINS } from "@agent-intents/shared";
+import { SUPPORTED_CHAINS, isPolymarketTrade, isTransferIntent } from "@agent-intents/shared";
 import { AmountDisplay, type FormattedValue } from "@ledgerhq/lumen-ui-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -236,10 +236,12 @@ function HistoryRow({
 	onSelect: () => void;
 }) {
 	const { details } = intent;
+	const isPolymarket = isPolymarketTrade(details);
+	const isTransfer = isTransferIntent(details);
 	const chainId = details.chainId as SupportedChainId;
 	const chain = SUPPORTED_CHAINS[chainId];
+	const token = isTransfer ? details.token : "USDC";
 
-	// Use the broadcasted date (from status history) instead of createdAt
 	const txDate = getBroadcastedDate(intent);
 	const formattedDate = txDate.toLocaleDateString(undefined, {
 		month: "short",
@@ -251,26 +253,32 @@ function HistoryRow({
 		minute: "2-digit",
 	});
 
+	const summary = isPolymarket
+		? details.memo || `${details.outcome} on ${details.marketTitle}`
+		: details.memo || `${details.amount} ${(details as { token?: string }).token ?? "USDC"} transfer`;
+
+	const toLabel = isPolymarket
+		? "Polymarket"
+		: isTransfer
+			? formatAddress(details.recipient)
+			: "—";
+
 	return (
 		<button
 			type="button"
 			onClick={onSelect}
 			className="flex items-center gap-16 rounded-lg bg-surface hover:bg-surface-hover transition-colors p-16 text-left w-full"
 		>
-			{/* Chain logo */}
 			<ChainLogo chainId={chainId} />
 
-			{/* Main info */}
 			<div className="flex flex-col gap-2 flex-1 min-w-0">
 				<div className="flex items-center gap-8">
-					<span className="body-2-semi-bold text-base truncate">
-						{details.memo || `${details.amount} ${details.token} transfer`}
-					</span>
+					<span className="body-2-semi-bold text-base truncate">{summary}</span>
 				</div>
 				<div className="flex items-center gap-8">
 					<span className="body-3 text-muted">{account ? formatAddress(account) : "—"}</span>
 					<span className="body-3 text-muted-subtle">→</span>
-					<span className="body-3 text-muted">{formatAddress(details.recipient)}</span>
+					<span className="body-3 text-muted">{toLabel}</span>
 					{chain && (
 						<>
 							<span className="body-3 text-muted-subtle">·</span>
@@ -280,21 +288,18 @@ function HistoryRow({
 				</div>
 			</div>
 
-			{/* Date/time (broadcasted) */}
 			<div className="flex flex-col items-end gap-2 shrink-0 w-96">
 				<span className="body-3 text-base">{formattedDate}</span>
 				<span className="body-3 text-base">{formattedTime}</span>
 			</div>
 
-			{/* Amount + USDC logo */}
 			<div className="flex items-center justify-end gap-8 shrink-0 w-96">
 				<span className="body-2-semi-bold text-base">
-					{details.amount} {details.token}
+					{details.amount} {token}
 				</span>
-				{details.token === "USDC" && <UsdcLogo />}
+				{token === "USDC" && <UsdcLogo />}
 			</div>
 
-			{/* Status */}
 			<div className="shrink-0 w-112">
 				<StatusBadge status={intent.status} />
 			</div>
