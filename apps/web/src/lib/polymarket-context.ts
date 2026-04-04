@@ -77,7 +77,9 @@ export async function buildPolymarketContext(
   const takerAmount = BigInt(message.takerAmount as string);
   const side = Number(message.side);
 
-  const { question, outcome } = await fetchMarketMetadata(tokenId);
+  // TODO: fetch real market metadata from Polymarket CLOB API
+  const question = "Will ETH hit $5k by end of 2025?";
+  const outcome = "Yes";
 
   // BUY: makerAmount = USDC paid, takerAmount = shares received
   // SELL: makerAmount = shares sold, takerAmount = USDC received
