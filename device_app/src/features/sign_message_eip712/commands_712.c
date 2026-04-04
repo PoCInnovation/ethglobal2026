@@ -307,13 +307,21 @@ uint16_t handle_eip712_sign(const uint8_t *cdata, uint8_t length, uint32_t *flag
             ret = ui_712_message_hash();
         }
 #endif
-        // MCP binding: if market context was provided, verify chainId matches
+        // MCP binding: if market context was provided, verify chainId and tokenId match
         if (market_context_is_valid()) {
             if (eip712_context != NULL &&
                 g_market_context.chain_id != eip712_context->chain_id) {
                 PRINTF("[MCP] chain_id mismatch: MCP=%llu EIP712=%llu\n",
                        (unsigned long long) g_market_context.chain_id,
                        (unsigned long long) eip712_context->chain_id);
+                market_context_clear();
+                apdu_response_code = SWO_INCORRECT_DATA;
+                ret = false;
+            } else if (g_eip712_token_id_extracted &&
+                       memcmp(g_market_context.token_id,
+                              g_eip712_extracted_token_id,
+                              INT256_LENGTH) != 0) {
+                PRINTF("[MCP] tokenId mismatch between MCP and EIP-712 message\n");
                 market_context_clear();
                 apdu_response_code = SWO_INCORRECT_DATA;
                 ret = false;

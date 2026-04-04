@@ -61,6 +61,11 @@ SAMPLE_TOKEN_ID = bytes.fromhex(
     "12345678901234567890ABCDEF123456"
 )
 
+# The tokenId from polymarket-order-data.json as bytes (uint256 big-endian)
+POLYMARKET_ORDER_TOKEN_ID = bytes.fromhex(
+    "df2d9709d71cc5fe53bbf419d265903c917d961a93cfebeffc015d31e68666f8"
+)
+
 
 def test_mcp_apdu_accepted(backend):
     """INS_PROVIDE_MARKET_CONTEXT (0x3A) returns 0x9000 for a valid payload."""
@@ -164,7 +169,7 @@ def test_mcp_screens_appear_before_eip712(scenario_navigator: NavigateWithScenar
     data = _polymarket_order_data()
 
     mcp = MarketContext(
-        token_id=SAMPLE_TOKEN_ID,
+        token_id=POLYMARKET_ORDER_TOKEN_ID,
         chain_id=137,
         market_name="Will Trump win the 2026 midterms?",
         market_outcome="YES",
@@ -184,3 +189,32 @@ def test_mcp_screens_appear_before_eip712(scenario_navigator: NavigateWithScenar
 
     vrs = ResponseParser.signature(app_client.response().data)
     assert DEVICE_ADDR == recover_message(data, vrs)
+
+
+def test_mcp_token_id_mismatch_aborts_sign(backend, scenario_navigator: NavigateWithScenario):
+    """MCP with wrong tokenId causes signing to abort with SWO_INCORRECT_DATA."""
+    from client.market_context import MarketContext
+
+    app_client = EthAppClient(backend)
+    data = _polymarket_order_data()
+
+    # MCP token_id does NOT match the tokenId in the EIP-712 Order
+    wrong_token_id = bytes(32)  # all zeros — doesn't match order's tokenId
+    mcp = MarketContext(
+        token_id=wrong_token_id,
+        chain_id=137,
+        market_name="Test Market",
+        market_outcome="YES",
+        market_amount="10.00 USDC",
+    )
+    response = app_client.provide_market_context(mcp)
+    assert response.status == 0x9000  # MCP itself accepted
+
+    settings_toggle(backend.device,
+                    scenario_navigator.navigator,
+                    [SettingID.BLIND_SIGNING])
+
+    with pytest.raises(Exception):
+        InputData.process_data(app_client, data)
+        with app_client.eip712_sign_new(BIP32_PATH):
+            scenario_navigator.review_approve_with_warning(do_comparison=False)
