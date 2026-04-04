@@ -2,7 +2,7 @@
 	"title": "Agent Quickstart — Create a Payment Intent",
 	"description": "Minimal instructions for an AI agent to create payment intents (transfers and Polymarket trades) using a JSON credential file.",
 	"baseUrl": "https://www.agentintents.io",
-	"prerequisites": ["Foundry (cast)", "curl", "jq"],
+	"prerequisites": ["Node.js (for AgentAuth; use apps/web/scripts/agent-auth-header.mjs)", "curl", "jq"],
 	"credentialFile": {
 		"description": "JSON credential file generated when the human owner registers your agent from the web UI.",
 		"schema": {
@@ -19,10 +19,11 @@
 		"headerFormat": "Authorization: AgentAuth <timestamp>.<bodyHash>.<signature>",
 		"parts": {
 			"timestamp": "Current Unix epoch in seconds as a string. Must be within 5 minutes of server time.",
-			"bodyHash": "keccak256 of the raw JSON body as 0x-prefixed hex string. For GET requests use the literal string '0x'.",
+			"bodyHash": "keccak256(toHex(rawJsonBody)) as in viem — 0x-prefixed hex. For GET requests use the literal string '0x'. Do NOT use cast keccak; it does not match the server.",
 			"signature": "EIP-191 personal_sign of '<timestamp>.<bodyHash>' using the agent's privateKey. Must be 0x-prefixed."
 		},
-		"bodyHashing": "The bodyHash is computed over the exact bytes sent in the request body. Use compact JSON (no extra whitespace) to ensure a deterministic hash."
+		"bodyHashing": "The bodyHash is computed over the exact bytes sent in the request body. Use compact JSON (no extra whitespace) to ensure a deterministic hash.",
+		"shellHelper": "From repo root: node apps/web/scripts/agent-auth-header.mjs post '<json>' <credential.json> or ... get <credential.json> — outputs full Authorization value."
 	},
 	"createTransferIntent": {
 		"method": "POST",
@@ -169,7 +170,17 @@
 		{ "chainId": 11155111, "name": "Sepolia", "token": "USDC", "notes": "Testnet" },
 		{ "chainId": 137, "name": "Polygon", "token": "USDC", "notes": "Polymarket trades only" }
 	],
+	"docMirrorHosting": {
+		"description": "If serving this doc on a public host (e.g. doc_ethcc.vibecallin.com): enable TLS, redirect HTTP to HTTPS, add HSTS after validation, serve agent-context.json as application/json.",
+		"canonicalHttpsPage": "https://doc_ethcc.vibecallin.com/agent-context",
+		"canonicalHttpsJson": "https://doc_ethcc.vibecallin.com/agent-context.json"
+	},
 	"troubleshooting": [
+		{
+			"error": "401 Authentication failed",
+			"cause": "Used cast keccak or wrong body hash algorithm",
+			"fix": "Use viem keccak256(toHex(body)) or node apps/web/scripts/agent-auth-header.mjs — not cast keccak"
+		},
 		{
 			"error": "401 Authentication failed",
 			"cause": "Signature or body hash is malformed",
@@ -201,6 +212,8 @@
 		"apiDocs": "https://www.agentintents.io/docs",
 		"openAPISpec": "https://www.agentintents.io/openapi.json",
 		"agentContextPage": "https://www.agentintents.io/agent-context",
-		"agentContextJSON": "https://www.agentintents.io/agent-context.json"
+		"agentContextJSON": "https://www.agentintents.io/agent-context.json",
+		"docMirrorPage": "https://doc_ethcc.vibecallin.com/agent-context",
+		"docMirrorJSON": "https://doc_ethcc.vibecallin.com/agent-context.json"
 	}
 }

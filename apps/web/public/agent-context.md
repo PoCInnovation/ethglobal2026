@@ -1,6 +1,20 @@
 # Agent Quickstart — Create a Payment Intent
 
-**Prerequisites:** [Foundry](https://book.getfoundry.sh/getting-started/installation) (`cast`), `curl`, and `jq`.
+**Prerequisites:** [Node.js](https://nodejs.org/) (for AgentAuth hashing/signing), `curl`, and `jq`. Optional: [Foundry](https://book.getfoundry.sh/getting-started/installation) (`cast`) for wallet utilities — **do not** use `cast keccak` for `bodyHash` (see below).
+
+## 0. Public doc mirror (doc_ethcc.vibecallin.com)
+
+If you host a copy of this page or `agent-context.json` on a public hostname (e.g. `doc_ethcc.vibecallin.com`):
+
+- Serve it over **HTTPS** with a valid TLS certificate.
+- **Redirect** all `http://` requests to `https://` (301).
+- After HTTPS is stable, send **`Strict-Transport-Security`** (HSTS) with an appropriate `max-age`.
+- Serve **`/agent-context.json`** with **`Content-Type: application/json`**.
+
+Canonical mirror URLs (use `https://` only once TLS is enabled):
+
+- Page: `https://doc_ethcc.vibecallin.com/agent-context`
+- JSON: `https://doc_ethcc.vibecallin.com/agent-context.json`
 
 ## 1. Credential File
 
@@ -32,14 +46,28 @@ Authorization: AgentAuth <timestamp>.<bodyHash>.<signature>
 | Part        | How to compute                                                                 |
 |-------------|--------------------------------------------------------------------------------|
 | `timestamp` | Current Unix epoch in **seconds** as a string (must be within 5 min of server time) |
-| `bodyHash`  | `cast keccak "$BODY"` — returns `0x`-prefixed keccak256 hash. For GET requests (no body), use the literal string `0x` |
-| `signature` | `cast wallet sign --private-key "$KEY" "$MESSAGE"` — returns `0x`-prefixed EIP-191 `personal_sign` over `"<timestamp>.<bodyHash>"` |
+| `bodyHash`  | **`keccak256(toHex(rawBody))` in viem** — same as the API implementation. For GET requests (no body), use the literal string `0x`. **Do not use `cast keccak`**; it hashes differently and causes `401`. |
+| `signature` | EIP-191 `personal_sign` of `"<timestamp>.<bodyHash>"` with the agent private key (`0x` prefix). In shell, use the repo helper below or sign in code with viem/ethers. |
 
 > **Important:** All hex values (`bodyHash`, `signature`) **must** include the `0x` prefix. Omitting it will result in a `401 Authentication failed` error.
 
 ### Body hashing
 
 The `bodyHash` is computed over the **exact bytes** sent in the request body. Write the JSON body as a compact literal string (no extra whitespace between keys and values) to ensure a deterministic hash.
+
+### Shell helper (matches production)
+
+From the repository root (requires `pnpm install` in the monorepo so `viem` is available under `apps/web`):
+
+```bash
+# POST: pass the exact JSON string used as curl -d
+AUTH=$(node apps/web/scripts/agent-auth-header.mjs post "$BODY" "$CREDENTIAL_FILE")
+
+# GET: body hash is always 0x
+AUTH=$(node apps/web/scripts/agent-auth-header.mjs get "$CREDENTIAL_FILE")
+```
+
+Then pass `-H "Authorization: $AUTH"` to `curl`.
 
 ## 3. Send a Transfer Intent
 
@@ -162,7 +190,6 @@ set -euo pipefail
 
 # ── Configuration ────────────────────────────────────────────────
 CREDENTIAL_FILE="agent-credential.json"
-PRIVATE_KEY=$(jq -r '.privateKey' "$CREDENTIAL_FILE")
 AGENT_LABEL=$(jq -r '.label' "$CREDENTIAL_FILE")
 
 # ── 1. Build compact JSON body ──────────────────────────────────
@@ -183,15 +210,13 @@ BODY=$(jq -cn \
     expiresInMinutes: 60
   }')
 
-# ── 2. Compute auth header ──────────────────────────────────────
-TIMESTAMP=$(date +%s)
-BODY_HASH=$(cast keccak "$BODY")
-SIGNATURE=$(cast wallet sign --private-key "$PRIVATE_KEY" "${TIMESTAMP}.${BODY_HASH}")
+# ── 2. Build auth header (viem-compatible; do not use cast keccak) ───────────
+AUTH=$(node apps/web/scripts/agent-auth-header.mjs post "$BODY" "$CREDENTIAL_FILE")
 
 # ── 3. Send intent ──────────────────────────────────────────────
 RESPONSE=$(curl -s -X POST "https://www.agentintents.io/api/intents" \
   -H "Content-Type: application/json" \
-  -H "Authorization: AgentAuth ${TIMESTAMP}.${BODY_HASH}.${SIGNATURE}" \
+  -H "Authorization: $AUTH" \
   -d "$BODY")
 
 echo "$RESPONSE" | jq .
@@ -207,18 +232,15 @@ STATUS="pending"
 for i in $(seq 1 120); do
   case "$STATUS" in confirmed|rejected|failed|expired) break ;; esac
   sleep 30
-  POLL_TS=$(date +%s)
-  POLL_SIG=$(cast wallet sign --private-key "$PRIVATE_KEY" "${POLL_TS}.0x")
+  POLL_AUTH=$(node apps/web/scripts/agent-auth-header.mjs get "$CREDENTIAL_FILE")
   STATUS=$(curl -s "https://www.agentintents.io/api/intents/${INTENT_ID}" \
-    -H "Authorization: AgentAuth ${POLL_TS}.0x.${POLL_SIG}" \
+    -H "Authorization: $POLL_AUTH" \
     | jq -r '.intent.status')
   echo "Poll $i: status=$STATUS"
 done
 
 echo "Final status: $STATUS"
 ```
-
-> **Tip:** `cast keccak` and `cast wallet sign` both return `0x`-prefixed output — no manual hex formatting needed.
 
 ## Complete Example: Polymarket Trade
 
@@ -227,14 +249,18 @@ echo "Final status: $STATUS"
 set -euo pipefail
 
 CREDENTIAL_FILE="agent-credential.json"
-PRIVATE_KEY=$(jq -r '.privateKey' "$CREDENTIAL_FILE")
 AGENT_LABEL=$(jq -r '.label' "$CREDENTIAL_FILE")
 BASE_URL="https://www.agentintents.io"
 
 # ── 1. Search for a market ──────────────────────────────────────
 echo "Searching for markets..."
 MARKETS=$(curl -s "${BASE_URL}/api/polymarket/markets?q=bitcoin&limit=5")
-echo "$MARKETS" | jq '.markets[] | {conditionId, question, yesPrice, noPrice}'
+# If the response is HTML (SPA) instead of JSON, use Gamma directly, e.g.:
+# curl -sS "https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=20&order=volume&ascending=false"
+echo "$MARKETS" | jq '.markets[]? | {conditionId, question, yesPrice, noPrice}' 2>/dev/null || {
+  echo "Markets endpoint did not return JSON; check deployment or use gamma-api.polymarket.com" >&2
+  exit 1
+}
 
 # Pick the first result (in practice, choose the most relevant)
 CONDITION_ID=$(echo "$MARKETS" | jq -r '.markets[0].conditionId')
@@ -259,15 +285,13 @@ BODY=$(jq -cn \
     expiresInMinutes: 60
   }')
 
-# ── 3. Compute auth header ──────────────────────────────────────
-TIMESTAMP=$(date +%s)
-BODY_HASH=$(cast keccak "$BODY")
-SIGNATURE=$(cast wallet sign --private-key "$PRIVATE_KEY" "${TIMESTAMP}.${BODY_HASH}")
+# ── 3. Build auth header (viem-compatible) ─────────────────────
+AUTH=$(node apps/web/scripts/agent-auth-header.mjs post "$BODY" "$CREDENTIAL_FILE")
 
 # ── 4. Send intent ──────────────────────────────────────────────
 RESPONSE=$(curl -s -X POST "${BASE_URL}/api/intents" \
   -H "Content-Type: application/json" \
-  -H "Authorization: AgentAuth ${TIMESTAMP}.${BODY_HASH}.${SIGNATURE}" \
+  -H "Authorization: $AUTH" \
   -d "$BODY")
 
 echo "$RESPONSE" | jq .
@@ -284,10 +308,9 @@ STATUS="pending"
 for i in $(seq 1 120); do
   case "$STATUS" in authorized|confirmed|rejected|failed|expired) break ;; esac
   sleep 30
-  POLL_TS=$(date +%s)
-  POLL_SIG=$(cast wallet sign --private-key "$PRIVATE_KEY" "${POLL_TS}.0x")
+  POLL_AUTH=$(node apps/web/scripts/agent-auth-header.mjs get "$CREDENTIAL_FILE")
   STATUS=$(curl -s "${BASE_URL}/api/intents/${INTENT_ID}" \
-    -H "Authorization: AgentAuth ${POLL_TS}.0x.${POLL_SIG}" \
+    -H "Authorization: $POLL_AUTH" \
     | jq -r '.intent.status')
   echo "Poll $i: status=$STATUS"
 done
@@ -310,6 +333,7 @@ echo "Final status: $STATUS"
 |-------|-------|-----|
 | `401 Authentication failed` | Signature or body hash is malformed | Ensure `bodyHash` and `signature` are `0x`-prefixed hex strings |
 | `401 Authentication failed` | Timestamp drift | Ensure your system clock is accurate (within 5 minutes of server time) |
-| `401 Authentication failed` | Body hash mismatch | Ensure you hash the **exact** bytes sent as the request body (compact JSON, no trailing newline) |
+| `401 Authentication failed` | Body hash mismatch | Use **viem** `keccak256(toHex(body))` or `apps/web/scripts/agent-auth-header.mjs` — **not** `cast keccak` |
+| `401 Authentication failed` | Wrong hashing tool | `cast keccak` does **not** match the server; always use viem or the provided Node helper |
 | `400 Market not found` | Invalid `conditionId` | Use the search endpoint (`GET /api/polymarket/markets?q=...`) to find valid condition IDs |
 | `400 Market is no longer active` | Market has closed or expired | Search for a different active market |

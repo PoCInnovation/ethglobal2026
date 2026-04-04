@@ -10,9 +10,11 @@
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
 		"db:migrate": "psql $POSTGRES_URL_NON_POOLING -f db/migrations/001_initial_schema.sql",
-		"test:intent:x402": "node scripts/test-intent-x402-credential.js"
+		"test:intent:x402": "node scripts/test-intent-x402-credential.js",
+		"smoke:polymarket-markets": "bash scripts/smoke-polymarket-markets.sh"
 	},
 	"dependencies": {
+		"@noble/curves": "1.9.7",
 		"@agent-intents/shared": "workspace:*",
 		"@ledgerhq/context-module": "0.0.0-develop-20260206115629",
 		"@ledgerhq/device-management-kit": "0.0.0-develop-20260206115629",

@@ -90,6 +90,9 @@ importers:
       '@ledgerhq/lumen-ui-react':
         specifier: ^0.0.76
         version: 0.0.76(a8a5dc7563a40f1fb12c3719836407e7)
+      '@noble/curves':
+        specifier: 1.9.7
+        version: 1.9.7
       '@radix-ui/react-dialog':
         specifier: ^1.1.15
         version: 1.1.15(@types/react-dom@19.2.3(@types/react@19.2.11))(@types/react@19.2.11)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)

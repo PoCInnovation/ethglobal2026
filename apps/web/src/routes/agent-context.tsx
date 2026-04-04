@@ -53,6 +53,7 @@ function AgentContextPage() {
 					<h4 className="body-4-semi-bold text-muted-subtle uppercase tracking-wider mb-8 px-12">
 						Getting Started
 					</h4>
+					<NavLink href="#doc-mirror-hosting">Doc mirror (HTTPS)</NavLink>
 					<NavLink href="#credential-file">Credential File</NavLink>
 					<NavLink href="#agentauth-header">AgentAuth Header</NavLink>
 					<NavLink href="#send-intent">Send a Transfer Intent</NavLink>
@@ -101,6 +102,21 @@ function AgentContextPage() {
 						<p className="body-2 text-base">
 							<strong>Prerequisites:</strong>{" "}
 							<a
+								href="https://nodejs.org/"
+								target="_blank"
+								rel="noopener noreferrer"
+								className="text-accent hover:underline"
+							>
+								Node.js
+							</a>{" "}
+							(for AgentAuth via{" "}
+							<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
+								apps/web/scripts/agent-auth-header.mjs
+							</code>
+							),{" "}
+							<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">curl</code>, and{" "}
+							<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">jq</code>. Optional:{" "}
+							<a
 								href="https://book.getfoundry.sh/getting-started/installation"
 								target="_blank"
 								rel="noopener noreferrer"
@@ -108,12 +124,47 @@ function AgentContextPage() {
 							>
 								Foundry
 							</a>{" "}
-							(<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">cast</code>),{" "}
-							<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">curl</code>, and{" "}
-							<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">jq</code>.
+							— do <strong>not</strong> use{" "}
+							<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">cast keccak</code> for{" "}
+							<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">bodyHash</code>.
 						</p>
 					</div>
 				</div>
+
+				{/* 0. Doc mirror hosting */}
+				<Section id="doc-mirror-hosting" title="0. Public doc mirror (doc_ethcc.vibecallin.com)">
+					<p className="body-2 text-muted">
+						If you mirror this page or{" "}
+						<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">agent-context.json</code> on
+						a public host: enable <strong>TLS</strong>, redirect <strong>HTTP → HTTPS</strong>, add{" "}
+						<strong>HSTS</strong> once HTTPS is stable, and serve the JSON with{" "}
+						<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
+							Content-Type: application/json
+						</code>
+						.
+					</p>
+					<p className="body-2 text-muted mt-8">
+						Canonical mirror (use <code className="px-4 py-2 rounded-xs bg-muted text-base body-3">https://</code>{" "}
+						only):{" "}
+						<a
+							href="https://doc_ethcc.vibecallin.com/agent-context"
+							className="text-accent hover:underline"
+							target="_blank"
+							rel="noopener noreferrer"
+						>
+							https://doc_ethcc.vibecallin.com/agent-context
+						</a>
+						{" · "}
+						<a
+							href="https://doc_ethcc.vibecallin.com/agent-context.json"
+							className="text-accent hover:underline"
+							target="_blank"
+							rel="noopener noreferrer"
+						>
+							agent-context.json
+						</a>
+					</p>
+				</Section>
 
 				{/* 1. Credential File */}
 				<Section id="credential-file" title="1. Credential File">
@@ -181,13 +232,15 @@ function AgentContextPage() {
 										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">bodyHash</code>
 									</td>
 									<td className="py-8">
+										<strong>viem</strong>{" "}
 										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
-											cast keccak "$BODY"
+											keccak256(toHex(rawBody))
 										</code>{" "}
-										— returns{" "}
-										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">0x</code>
-										-prefixed keccak256 hash. For GET requests (no body), use the literal string{" "}
-										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">0x</code>
+										— same as the API. For GET requests (no body), use the literal string{" "}
+										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">0x</code>.{" "}
+										<strong>Do not use</strong>{" "}
+										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">cast keccak</code>{" "}
+										— it does not match the server.
 									</td>
 								</tr>
 								<tr className="border-b border-muted/50">
@@ -197,17 +250,17 @@ function AgentContextPage() {
 										</code>
 									</td>
 									<td className="py-8">
-										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
-											{'cast wallet sign --private-key "$KEY" "$MESSAGE"'}
-										</code>{" "}
-										— EIP-191{" "}
+										EIP-191{" "}
 										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
 											personal_sign
 										</code>{" "}
-										over{" "}
+										of{" "}
 										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
 											{"<timestamp>.<bodyHash>"}
-										</code>
+										</code>{" "}
+										with the agent private key (
+										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">0x</code>
+										prefix). Use the Node helper below or sign in code (viem, ethers).
 									</td>
 								</tr>
 							</tbody>
@@ -236,6 +289,17 @@ function AgentContextPage() {
 						body as a compact literal string (no extra whitespace between keys and values) to ensure
 						a deterministic hash.
 					</p>
+					<h3 className="heading-5-semi-bold text-base mt-24">Shell helper (matches production)</h3>
+					<p className="body-2 text-muted">
+						From the repository root (after <code className="px-4 py-2 rounded-xs bg-muted text-base body-3">pnpm install</code>
+						):
+					</p>
+					<CodeBlock language="bash" title="agent-auth-header.mjs">
+						{`AUTH=$(node apps/web/scripts/agent-auth-header.mjs post "$BODY" "$CREDENTIAL_FILE")
+# GET / poll:
+AUTH=$(node apps/web/scripts/agent-auth-header.mjs get "$CREDENTIAL_FILE")
+curl ... -H "Authorization: $AUTH"`}
+					</CodeBlock>
 				</Section>
 
 			{/* 3. Send a Transfer Intent */}
@@ -510,7 +574,6 @@ set -euo pipefail
 
 # ── Configuration ────────────────────────────────────────────────
 CREDENTIAL_FILE="agent-credential.json"
-PRIVATE_KEY=$(jq -r '.privateKey' "$CREDENTIAL_FILE")
 AGENT_LABEL=$(jq -r '.label' "$CREDENTIAL_FILE")
 
 # ── 1. Build compact JSON body ──────────────────────────────────
@@ -531,15 +594,13 @@ BODY=$(jq -cn \\
     expiresInMinutes: 60
   }')
 
-# ── 2. Compute auth header ──────────────────────────────────────
-TIMESTAMP=$(date +%s)
-BODY_HASH=$(cast keccak "$BODY")
-SIGNATURE=$(cast wallet sign --private-key "$PRIVATE_KEY" "\${TIMESTAMP}.\${BODY_HASH}")
+# ── 2. Auth header (viem-compatible — do not use cast keccak) ──
+AUTH=$(node apps/web/scripts/agent-auth-header.mjs post "$BODY" "$CREDENTIAL_FILE")
 
 # ── 3. Send intent ──────────────────────────────────────────────
 RESPONSE=$(curl -s -X POST "https://www.agentintents.io/api/intents" \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: AgentAuth \${TIMESTAMP}.\${BODY_HASH}.\${SIGNATURE}" \\
+  -H "Authorization: $AUTH" \\
   -d "$BODY")
 
 echo "$RESPONSE" | jq .
@@ -555,29 +616,15 @@ STATUS="pending"
 for i in $(seq 1 120); do
   case "$STATUS" in confirmed|rejected|failed|expired) break ;; esac
   sleep 30
-  POLL_TS=$(date +%s)
-  POLL_SIG=$(cast wallet sign --private-key "$PRIVATE_KEY" "\${POLL_TS}.0x")
+  POLL_AUTH=$(node apps/web/scripts/agent-auth-header.mjs get "$CREDENTIAL_FILE")
   STATUS=$(curl -s "https://www.agentintents.io/api/intents/\${INTENT_ID}" \\
-    -H "Authorization: AgentAuth \${POLL_TS}.0x.\${POLL_SIG}" \\
+    -H "Authorization: $POLL_AUTH" \\
     | jq -r '.intent.status')
   echo "Poll $i: status=$STATUS"
 done
 
 echo "Final status: $STATUS"`}
 					</CodeBlock>
-
-					<div className="p-16 rounded-md bg-accent/10">
-						<p className="body-2 text-base">
-							<strong>Tip:</strong>{" "}
-							<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">cast keccak</code>{" "}
-							and{" "}
-							<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
-								cast wallet sign
-							</code>{" "}
-							both return <code className="px-4 py-2 rounded-xs bg-muted text-base body-3">0x</code>
-							-prefixed output — no manual hex formatting needed.
-						</p>
-					</div>
 				</Section>
 
 			{/* Complete Example: Polymarket Trade */}
@@ -587,16 +634,16 @@ echo "Final status: $STATUS"`}
 set -euo pipefail
 
 CREDENTIAL_FILE="agent-credential.json"
-PRIVATE_KEY=$(jq -r '.privateKey' "$CREDENTIAL_FILE")
 AGENT_LABEL=$(jq -r '.label' "$CREDENTIAL_FILE")
 BASE_URL="https://www.agentintents.io"
 
 # ── 1. Search for a market ──────────────────────────────────────
 echo "Searching for markets..."
 MARKETS=$(curl -s "\${BASE_URL}/api/polymarket/markets?q=bitcoin&limit=5")
-echo "$MARKETS" | jq '.markets[] | {conditionId, question, yesPrice, noPrice}'
+# If the response is HTML (SPA), use Gamma instead, e.g.:
+# curl -sS "https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=20&order=volume&ascending=false"
+echo "$MARKETS" | jq '.markets[]? | {conditionId, question, yesPrice, noPrice}'
 
-# Pick the first result (in practice, choose the most relevant)
 CONDITION_ID=$(echo "$MARKETS" | jq -r '.markets[0].conditionId')
 echo "Selected conditionId: $CONDITION_ID"
 
@@ -619,15 +666,13 @@ BODY=$(jq -cn \\
     expiresInMinutes: 60
   }')
 
-# ── 3. Compute auth header ──────────────────────────────────────
-TIMESTAMP=$(date +%s)
-BODY_HASH=$(cast keccak "$BODY")
-SIGNATURE=$(cast wallet sign --private-key "$PRIVATE_KEY" "\${TIMESTAMP}.\${BODY_HASH}")
+# ── 3. Auth header (viem-compatible) ───────────────────────────
+AUTH=$(node apps/web/scripts/agent-auth-header.mjs post "$BODY" "$CREDENTIAL_FILE")
 
 # ── 4. Send intent ──────────────────────────────────────────────
 RESPONSE=$(curl -s -X POST "\${BASE_URL}/api/intents" \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: AgentAuth \${TIMESTAMP}.\${BODY_HASH}.\${SIGNATURE}" \\
+  -H "Authorization: $AUTH" \\
   -d "$BODY")
 
 echo "$RESPONSE" | jq .
@@ -641,12 +686,11 @@ INTENT_ID=$(echo "$RESPONSE" | jq -r '.intent.id')
 STATUS="pending"
 
 for i in $(seq 1 120); do
-  case "$STATUS" in confirmed|rejected|failed|expired) break ;; esac
+  case "$STATUS" in authorized|confirmed|rejected|failed|expired) break ;; esac
   sleep 30
-  POLL_TS=$(date +%s)
-  POLL_SIG=$(cast wallet sign --private-key "$PRIVATE_KEY" "\${POLL_TS}.0x")
+  POLL_AUTH=$(node apps/web/scripts/agent-auth-header.mjs get "$CREDENTIAL_FILE")
   STATUS=$(curl -s "\${BASE_URL}/api/intents/\${INTENT_ID}" \\
-    -H "Authorization: AgentAuth \${POLL_TS}.0x.\${POLL_SIG}" \\
+    -H "Authorization: $POLL_AUTH" \\
     | jq -r '.intent.status')
   echo "Poll $i: status=$STATUS"
 done
@@ -725,6 +769,24 @@ echo "Final status: $STATUS"`}
 											401 Authentication failed
 										</code>
 									</td>
+									<td className="py-8 pr-16">Used cast keccak or wrong body hash</td>
+									<td className="py-8">
+										Use viem{" "}
+										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
+											keccak256(toHex(body))
+										</code>{" "}
+										or{" "}
+										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
+											apps/web/scripts/agent-auth-header.mjs
+										</code>
+									</td>
+								</tr>
+								<tr className="border-b border-muted/50">
+									<td className="py-8 pr-16">
+										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
+											401 Authentication failed
+										</code>
+									</td>
 									<td className="py-8 pr-16">Signature or body hash is malformed</td>
 									<td className="py-8">
 										Ensure{" "}
@@ -756,8 +818,8 @@ echo "Final status: $STATUS"`}
 								</td>
 								<td className="py-8 pr-16">Body hash mismatch</td>
 								<td className="py-8">
-									Ensure you hash the <strong>exact</strong> bytes sent as the request body
-									(compact JSON, no trailing newline)
+									Hash the <strong>exact</strong> request bytes (compact JSON, no trailing newline)
+									with viem — not <code className="px-4 py-2 rounded-xs bg-muted text-base body-3">cast keccak</code>
 								</td>
 							</tr>
 							<tr className="border-b border-muted/50">

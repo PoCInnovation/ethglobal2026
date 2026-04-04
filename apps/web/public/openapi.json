@@ -3,7 +3,7 @@
 	"info": {
 		"title": "Agent Payments with Ledger API",
 		"version": "0.2.0",
-		"description": "Agent-first API for submitting transaction intents. AI agents propose transactions; humans review and sign on Ledger hardware. Agents never touch private keys.\n\n## Quick Start\n1. Register your agent key (human signs authorization on Ledger)\n2. `POST /api/intents` with AgentAuth header to propose a transaction\n3. Share the returned `paymentUrl` with the human\n4. Poll `GET /api/intents/{id}` until status is `confirmed`, `rejected`, `failed`, or `expired`\n\n## Authentication\nAgents authenticate via the `Authorization: AgentAuth <timestamp>.<bodyHash>.<signature>` header.\n- `timestamp`: Unix epoch seconds (within 5 min of server time)\n- `bodyHash`: keccak256 of raw JSON body as hex (use `0x` for GET)\n- `signature`: EIP-191 personal_sign of `<timestamp>.<bodyHash>` with agent's secp256k1 key"
+		"description": "Agent-first API for submitting transaction intents. AI agents propose transactions; humans review and sign on Ledger hardware. Agents never touch private keys.\n\n## Quick Start\n1. Register your agent key (human signs authorization on Ledger)\n2. `POST /api/intents` with AgentAuth header to propose a transaction\n3. Share the returned `paymentUrl` with the human\n4. Poll `GET /api/intents/{id}` until status is `confirmed`, `rejected`, `failed`, or `expired`\n\n## Authentication\nAgents authenticate via the `Authorization: AgentAuth <timestamp>.<bodyHash>.<signature>` header.\n- `timestamp`: Unix epoch seconds (within 5 min of server time)\n- `bodyHash`: viem-style `keccak256(toHex(raw UTF-8 body))` as hex (use `0x` for GET). Do not use `cast keccak` — it does not match the server.\n- `signature`: EIP-191 personal_sign of `<timestamp>.<bodyHash>` with agent's secp256k1 key"
 	},
 	"servers": [
 		{ "url": "https://agent-intents-web.vercel.app", "description": "Production" },
@@ -863,7 +863,7 @@
 				"type": "apiKey",
 				"in": "header",
 				"name": "Authorization",
-				"description": "Agent authentication. Format: `AgentAuth <timestamp>.<bodyHash>.<signature>`\n\n- `timestamp`: Unix epoch seconds (must be within 5 min of server time)\n- `bodyHash`: keccak256 of the raw JSON body as hex string (use `0x` for GET requests)\n- `signature`: EIP-191 personal_sign of the string `<timestamp>.<bodyHash>` using the agent's secp256k1 private key\n\nThe server recovers the signer address and matches it against registered agent public keys."
+				"description": "Agent authentication. Format: `AgentAuth <timestamp>.<bodyHash>.<signature>`\n\n- `timestamp`: Unix epoch seconds (must be within 5 min of server time)\n- `bodyHash`: viem `keccak256(toHex(raw body bytes))` as hex (use `0x` for GET). Not the same as `cast keccak`.\n- `signature`: EIP-191 personal_sign of the string `<timestamp>.<bodyHash>` using the agent's secp256k1 private key\n\nThe server recovers the signer Ethereum address and resolves the agent using the registered compressed public key."
 			},
 			"SessionCookie": {
 				"type": "apiKey",

@@ -61,7 +61,10 @@
 				</div>
 			</div>
 
-			<p><strong>Prerequisites:</strong> <a href="https://book.getfoundry.sh/getting-started/installation">Foundry</a> (<code>cast</code>), <code>curl</code>, and <code>jq</code>.</p>
+			<p><strong>Prerequisites:</strong> <a href="https://nodejs.org/">Node.js</a> (for AgentAuth via <code>apps/web/scripts/agent-auth-header.mjs</code>), <code>curl</code>, and <code>jq</code>. Optional Foundry &mdash; do <strong>not</strong> use <code>cast keccak</code> for <code>bodyHash</code>.</p>
+
+			<h2 id="doc-mirror-hosting">0. Public doc mirror (doc_ethcc.vibecallin.com)</h2>
+			<p>Enable <strong>TLS</strong>, redirect <strong>HTTP &rarr; HTTPS</strong>, add <strong>HSTS</strong> once stable, serve <code>agent-context.json</code> as <code>application/json</code>. Canonical: <a href="https://doc_ethcc.vibecallin.com/agent-context">https://doc_ethcc.vibecallin.com/agent-context</a> &middot; <a href="https://doc_ethcc.vibecallin.com/agent-context.json">JSON</a></p>
 
 			<!-- ============================================================ -->
 			<h2 id="credential-file">1. Credential File</h2>
@@ -99,11 +102,11 @@
 					</tr>
 					<tr>
 						<td><code>bodyHash</code></td>
-						<td><code>cast keccak "$BODY"</code> &mdash; returns <code>0x</code>-prefixed keccak256 hash. For GET requests (no body), use the literal string <code>0x</code>.</td>
+						<td><strong>viem</strong> <code>keccak256(toHex(rawBody))</code> &mdash; same as the API. GET: literal <code>0x</code>. <strong>Do not use</strong> <code>cast keccak</code>.</td>
 					</tr>
 					<tr>
 						<td><code>signature</code></td>
-						<td><code>cast wallet sign --private-key "$KEY" "$MESSAGE"</code> &mdash; EIP-191 <code>personal_sign</code> over <code>"&lt;timestamp&gt;.&lt;bodyHash&gt;"</code>.</td>
+						<td>EIP-191 <code>personal_sign</code> of <code>"&lt;timestamp&gt;.&lt;bodyHash&gt;"</code> with agent key (<code>0x</code> prefix). Use the Node helper or viem/ethers in code.</td>
 					</tr>
 				</tbody>
 			</table>
@@ -112,6 +115,11 @@
 
 			<h3>Body hashing</h3>
 			<p>The <code>bodyHash</code> is computed over the <strong>exact bytes</strong> sent in the request body. Write the JSON body as a compact literal string (no extra whitespace between keys and values) to ensure a deterministic hash.</p>
+
+			<h3>Shell helper</h3>
+<pre>AUTH=$(node apps/web/scripts/agent-auth-header.mjs post "$BODY" "$CREDENTIAL_FILE")
+AUTH=$(node apps/web/scripts/agent-auth-header.mjs get "$CREDENTIAL_FILE")
+curl ... -H "Authorization: $AUTH"</pre>
 
 		<!-- ============================================================ -->
 		<h2 id="send-intent">3. Send a Transfer Intent</h2>
@@ -239,7 +247,6 @@ set -euo pipefail
 
 # ── Configuration ────────────────────────────────────────────────
 CREDENTIAL_FILE="agent-credential.json"
-PRIVATE_KEY=$(jq -r '.privateKey' "$CREDENTIAL_FILE")
 AGENT_LABEL=$(jq -r '.label' "$CREDENTIAL_FILE")
 
 # ── 1. Build compact JSON body ──────────────────────────────────
@@ -260,15 +267,13 @@ BODY=$(jq -cn \
     expiresInMinutes: 60
   }')
 
-# ── 2. Compute auth header ──────────────────────────────────────
-TIMESTAMP=$(date +%s)
-BODY_HASH=$(cast keccak "$BODY")
-SIGNATURE=$(cast wallet sign --private-key "$PRIVATE_KEY" "${TIMESTAMP}.${BODY_HASH}")
+# ── 2. Auth header (viem-compatible) ─────────────────────────────
+AUTH=$(node apps/web/scripts/agent-auth-header.mjs post "$BODY" "$CREDENTIAL_FILE")
 
 # ── 3. Send intent ──────────────────────────────────────────────
 RESPONSE=$(curl -s -X POST "https://www.agentintents.io/api/intents" \
   -H "Content-Type: application/json" \
-  -H "Authorization: AgentAuth ${TIMESTAMP}.${BODY_HASH}.${SIGNATURE}" \
+  -H "Authorization: $AUTH" \
   -d "$BODY")
 
 echo "$RESPONSE" | jq .
@@ -284,17 +289,14 @@ STATUS="pending"
 for i in $(seq 1 120); do
   case "$STATUS" in confirmed|rejected|failed|expired) break ;; esac
   sleep 30
-  POLL_TS=$(date +%s)
-  POLL_SIG=$(cast wallet sign --private-key "$PRIVATE_KEY" "${POLL_TS}.0x")
+  POLL_AUTH=$(node apps/web/scripts/agent-auth-header.mjs get "$CREDENTIAL_FILE")
   STATUS=$(curl -s "https://www.agentintents.io/api/intents/${INTENT_ID}" \
-    -H "Authorization: AgentAuth ${POLL_TS}.0x.${POLL_SIG}" \
+    -H "Authorization: $POLL_AUTH" \
     | jq -r '.intent.status')
   echo "Poll $i: status=$STATUS"
 done
 
 echo "Final status: $STATUS"</pre>
-
-		<div class="note"><strong>Tip:</strong> <code>cast keccak</code> and <code>cast wallet sign</code> both return <code>0x</code>-prefixed output &mdash; no manual hex formatting needed.</div>
 
 		<!-- ============================================================ -->
 		<h2 id="polymarket-example">Complete Example: Polymarket Trade</h2>
@@ -304,14 +306,13 @@ echo "Final status: $STATUS"</pre>
 set -euo pipefail
 
 CREDENTIAL_FILE="agent-credential.json"
-PRIVATE_KEY=$(jq -r '.privateKey' "$CREDENTIAL_FILE")
 AGENT_LABEL=$(jq -r '.label' "$CREDENTIAL_FILE")
 BASE_URL="https://www.agentintents.io"
 
 # ── 1. Search for a market ──────────────────────────────────────
 echo "Searching for markets..."
 MARKETS=$(curl -s "${BASE_URL}/api/polymarket/markets?q=bitcoin&amp;limit=5")
-echo "$MARKETS" | jq '.markets[] | {conditionId, question, yesPrice, noPrice}'
+echo "$MARKETS" | jq '.markets[]? | {conditionId, question, yesPrice, noPrice}'
 
 # Pick the first result
 CONDITION_ID=$(echo "$MARKETS" | jq -r '.markets[0].conditionId')
@@ -336,15 +337,13 @@ BODY=$(jq -cn \
     expiresInMinutes: 60
   }')
 
-# ── 3. Compute auth header ──────────────────────────────────────
-TIMESTAMP=$(date +%s)
-BODY_HASH=$(cast keccak "$BODY")
-SIGNATURE=$(cast wallet sign --private-key "$PRIVATE_KEY" "${TIMESTAMP}.${BODY_HASH}")
+# ── 3. Auth header (viem-compatible) ─────────────────────────────
+AUTH=$(node apps/web/scripts/agent-auth-header.mjs post "$BODY" "$CREDENTIAL_FILE")
 
 # ── 4. Send intent ──────────────────────────────────────────────
 RESPONSE=$(curl -s -X POST "${BASE_URL}/api/intents" \
   -H "Content-Type: application/json" \
-  -H "Authorization: AgentAuth ${TIMESTAMP}.${BODY_HASH}.${SIGNATURE}" \
+  -H "Authorization: $AUTH" \
   -d "$BODY")
 
 echo "$RESPONSE" | jq .
@@ -358,12 +357,11 @@ INTENT_ID=$(echo "$RESPONSE" | jq -r '.intent.id')
 STATUS="pending"
 
 for i in $(seq 1 120); do
-  case "$STATUS" in confirmed|rejected|failed|expired) break ;; esac
+  case "$STATUS" in authorized|confirmed|rejected|failed|expired) break ;; esac
   sleep 30
-  POLL_TS=$(date +%s)
-  POLL_SIG=$(cast wallet sign --private-key "$PRIVATE_KEY" "${POLL_TS}.0x")
+  POLL_AUTH=$(node apps/web/scripts/agent-auth-header.mjs get "$CREDENTIAL_FILE")
   STATUS=$(curl -s "${BASE_URL}/api/intents/${INTENT_ID}" \
-    -H "Authorization: AgentAuth ${POLL_TS}.0x.${POLL_SIG}" \
+    -H "Authorization: $POLL_AUTH" \
     | jq -r '.intent.status')
   echo "Poll $i: status=$STATUS"
 done
@@ -397,6 +395,11 @@ echo "Final status: $STATUS"</pre>
 				<tbody>
 					<tr>
 						<td><code>401 Authentication failed</code></td>
+						<td>Used <code>cast keccak</code> or wrong hash</td>
+						<td>Use viem <code>keccak256(toHex(body))</code> or <code>apps/web/scripts/agent-auth-header.mjs</code></td>
+					</tr>
+					<tr>
+						<td><code>401 Authentication failed</code></td>
 						<td>Signature or body hash is malformed</td>
 						<td>Ensure <code>bodyHash</code> and <code>signature</code> are <code>0x</code>-prefixed hex strings</td>
 					</tr>
@@ -408,7 +411,7 @@ echo "Final status: $STATUS"</pre>
 				<tr>
 					<td><code>401 Authentication failed</code></td>
 					<td>Body hash mismatch</td>
-					<td>Ensure you hash the <strong>exact</strong> bytes sent as the request body (compact JSON, no trailing newline)</td>
+					<td>Hash exact request bytes with viem &mdash; not <code>cast keccak</code></td>
 				</tr>
 				<tr>
 					<td><code>400 Market not found</code></td>

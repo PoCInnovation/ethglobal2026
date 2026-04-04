@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock external dependencies before importing the module under test
 vi.mock("../agentsRepo.js", () => ({
-	getActiveMemberByPubkey: vi.fn(),
+	getActiveMemberByAgentSignerAddress: vi.fn(),
 }));
 
 vi.mock("../logger.js", () => ({
@@ -17,7 +17,6 @@ vi.mock("../logger.js", () => ({
 
 // After mocking, import the module
 import { verifyAgentAuth } from "../agentAuth.js";
-import { getActiveMemberByPubkey } from "../agentsRepo.js";
 
 function makeReq(overrides: Partial<VercelRequest> = {}): VercelRequest {
 	return {
