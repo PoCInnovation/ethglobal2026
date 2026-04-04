@@ -704,7 +704,7 @@ function IntentRow({ intent, onSelectIntent }: IntentRowProps) {
 							<Button
 								appearance="base"
 								size="sm"
-								onClick={handleSign}
+								onClick={isPolymarket ? () => onSelectIntent(intent) : handleSign}
 								disabled={isSigning || isRejecting || updateStatus.isPending}
 							>
 								{isSigning ? <Spinner size="sm" /> : "Sign"}
@@ -762,6 +762,9 @@ export function IntentTable({
 }: IntentTableProps) {
 	const [selectedIntent, setSelectedIntent] = useState<Intent | null>(null);
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
+	// Track which intents have completed council deliberation (by id) so re-opening
+	// the dialog doesn't re-trigger a new deliberation run.
+	const [deliberatedIds, setDeliberatedIds] = useState<Set<string>>(new Set());
 
 	const handleSelectIntent = (intent: Intent) => {
 		setSelectedIntent(intent);
@@ -771,8 +774,13 @@ export function IntentTable({
 	const handleDialogClose = (open: boolean) => {
 		setIsDialogOpen(open);
 		if (!open) {
-			setSelectedIntent(null);
+			// Keep selectedIntent so the closing animation doesn't flash — clear after delay
+			setTimeout(() => setSelectedIntent(null), 300);
 		}
+	};
+
+	const handleCouncilComplete = (intentId: string) => {
+		setDeliberatedIds(prev => new Set(prev).add(intentId));
 	};
 
 	// Determine what to show in the table body
@@ -813,6 +821,8 @@ export function IntentTable({
 				intent={selectedIntent}
 				open={isDialogOpen}
 				onOpenChange={handleDialogClose}
+				councilAlreadyDone={selectedIntent ? deliberatedIds.has(selectedIntent.id) : false}
+				onCouncilComplete={handleCouncilComplete}
 			/>
 		</>
 	);

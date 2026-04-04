@@ -31,7 +31,7 @@ export function setSessionCookie(res: VercelResponse, sessionId: string, expires
 		`${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}`,
 		"Path=/",
 		"HttpOnly",
-		"SameSite=Strict",
+		isProd ? "SameSite=Strict" : "SameSite=Lax",
 		isProd ? "Secure" : "",
 		`Expires=${expiresAt.toUTCString()}`,
 	]

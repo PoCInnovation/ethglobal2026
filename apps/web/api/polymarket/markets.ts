@@ -17,12 +17,13 @@ interface GammaMarketToken {
 }
 
 interface GammaMarket {
-	condition_id: string;
+	conditionId: string;
 	question: string;
 	outcomes: string;
+	outcomePrices: string;
 	active: boolean;
 	closed: boolean;
-	end_date_iso: string;
+	endDate: string;
 	volume: string;
 	tokens: GammaMarketToken[];
 }
@@ -64,17 +65,31 @@ export default methodRouter({
 
 			const raw: GammaMarket[] = await response.json();
 
+			// Filter out markets ending within 6h — sports markets often have
+			// stale Gamma endDate but CLOB already marks them as expired.
+			const sixHoursFromNow = new Date(Date.now() + 6 * 60 * 60 * 1000);
 			let markets: MarketResult[] = raw
-				.filter((m) => m.active && !m.closed && m.condition_id)
-				.map((m) => ({
-					conditionId: m.condition_id,
-					question: m.question,
-					yesPrice: m.tokens?.[0]?.price ?? 0,
-					noPrice: m.tokens?.[1]?.price ?? 0,
-					volume: Number(m.volume || 0),
-					endDate: m.end_date_iso,
-					active: true,
-				}));
+				.filter((m) => {
+					if (!m.active || m.closed || !m.conditionId) return false;
+					const end = new Date(m.endDate);
+					const passes = end > sixHoursFromNow;
+					if (!passes) {
+						logger.info({ conditionId: m.conditionId, question: m.question, endDate: m.endDate }, "Market filtered out (ends within 6h)");
+					}
+					return passes;
+				})
+				.map((m) => {
+					const prices: string[] = JSON.parse(m.outcomePrices || "[]");
+					return {
+						conditionId: m.conditionId,
+						question: m.question,
+						yesPrice: Number(prices[0] ?? m.tokens?.[0]?.price ?? 0),
+						noPrice: Number(prices[1] ?? m.tokens?.[1]?.price ?? 0),
+						volume: Number(m.volume || 0),
+						endDate: m.endDate,
+						active: true,
+					};
+				});
 
 			if (q) {
 				const terms = q.toLowerCase().split(/\s+/).filter(Boolean);

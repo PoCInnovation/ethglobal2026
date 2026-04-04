@@ -116,9 +116,14 @@ export function validateMarketActive(market: NormalizedMarket): string | null {
 	}
 	if (market.end_date_iso) {
 		const endDate = new Date(market.end_date_iso);
-		if (endDate.getTime() < Date.now()) {
+		const now = Date.now();
+		logger.info(
+			{ conditionId: market.condition_id, end_date_iso: market.end_date_iso, endDateMs: endDate.getTime(), nowMs: now, diffMinutes: Math.round((endDate.getTime() - now) / 60000) },
+			"Checking market expiry",
+		);
+		if (endDate.getTime() < now) {
 			logger.warn(
-				{ conditionId: market.condition_id, end_date_iso: market.end_date_iso },
+				{ conditionId: market.condition_id, end_date_iso: market.end_date_iso, expiredSinceMinutes: Math.round((now - endDate.getTime()) / 60000) },
 				"Market validation failed: expired",
 			);
 			return "Market has expired";

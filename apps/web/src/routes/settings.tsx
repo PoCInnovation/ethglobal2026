@@ -264,11 +264,15 @@ function ProvisionAgentForm(props: {
 	const handleDownload = useCallback(() => {
 		if (!keyMaterial) return;
 
+		// publicKey must be the Ethereum address derived from the private key —
+		// that's what gets registered in DB (agentAddress). The LKRP compressed
+		// pubkey (keyMaterial.publicKeyHex) is different and would cause auth mismatches.
+		const viemAccount = privateKeyToAccount(keyMaterial.privateKeyHex as `0x${string}`);
 		const credential = buildAgentCredentialFile({
 			label: label || "Unnamed Agent",
 			trustchainId,
 			privateKeyHex: keyMaterial.privateKeyHex,
-			publicKeyHex: keyMaterial.publicKeyHex,
+			publicKeyHex: viemAccount.address.toLowerCase(),
 		});
 
 		downloadAgentCredential(credential);

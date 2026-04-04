@@ -10,6 +10,11 @@ const envSchema = z.object({
 	CRON_SECRET: z.string().optional(),
 	/** Comma-separated list of allowed CORS origins. Empty or unset = allow current origin (dev). */
 	ALLOWED_ORIGINS: z.string().optional().default(""),
+	/** Required for the AI council deliberation (Gemini API). */
+	GEMINI_API_KEY: z.string().min(1, "GEMINI_API_KEY is required"),
+	/** Optional second and third Gemini API keys — one per agent to avoid rate limits. */
+	GEMINI_API_KEY_2: z.string().optional(),
+	GEMINI_API_KEY_3: z.string().optional(),
 });
 
 function getEnv() {
@@ -17,6 +22,9 @@ function getEnv() {
 		POSTGRES_URL: process.env.POSTGRES_URL ?? "",
 		CRON_SECRET: process.env.CRON_SECRET,
 		ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
+		GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? "",
+		GEMINI_API_KEY_2: process.env.GEMINI_API_KEY_2,
+		GEMINI_API_KEY_3: process.env.GEMINI_API_KEY_3,
 	};
 
 	const result = envSchema.safeParse(raw);
