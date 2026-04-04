@@ -35,12 +35,8 @@ Users trading on Polymarket through our app sign transactions on a Ledger hardwa
                     └──────────┬──────────────┘
                                │
                     ┌──────────▼──────────────┐
-                    │   PolyProxy.sol          │
-                    │   reads oracle ──► trade │
-                    └──────────┬──────────────┘
-                               │
-                    ┌──────────▼──────────────┐
                     │   Ledger Plugin          │
+                    │   reads oracle ──► trade │
                     │   displays verified      │
                     │   market title on device │
                     └─────────────────────────┘
