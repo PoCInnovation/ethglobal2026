@@ -576,6 +576,8 @@ const MCP_TAG = {
 	MARKET_AMOUNT: 0x66,
 	MARKET_SHARES: 0x67,
 	MARKET_PRICE: 0x68,
+	AUTH_LABEL: 0x70,
+	AUTH_ADDRESS: 0x71,
 	DER_SIGNATURE: 0x15,
 } as const;
 
@@ -608,51 +610,88 @@ try {
 }
 
 app.post("/api/market-context/sign", (req, res) => {
-	const { tokenId, chainId, marketName, marketOutcome, marketAmount, marketShares, marketPrice } =
-		req.body;
-	if (
-		!tokenId ||
-		!chainId ||
-		!marketName ||
-		!marketOutcome ||
-		!marketAmount ||
-		!marketShares ||
-		!marketPrice
-	) {
-		res.status(400).json({ error: "Missing required fields" });
-		return;
-	}
-
 	if (!mcpPrivKeyPem) {
 		res.status(500).json({ error: "Attester key not configured" });
 		return;
 	}
 
-	const now = Math.floor(Date.now() / 1000);
-	const expiresAt = now + 300;
+	const { type } = req.body;
+	let payload: Buffer;
 
-	const tokenIdBuf = Buffer.from(BigInt(tokenId).toString(16).padStart(64, "0"), "hex");
-	const chainIdBuf = Buffer.alloc(8);
-	chainIdBuf.writeBigUInt64BE(BigInt(chainId));
-	const issuedAtBuf = Buffer.alloc(4);
-	issuedAtBuf.writeUInt32BE(now);
-	const expiresAtBuf = Buffer.alloc(4);
-	expiresAtBuf.writeUInt32BE(expiresAt);
+	if (type === "auth") {
+		const { chainId, label, address } = req.body;
+		if (!chainId || !label || !address) {
+			res.status(400).json({ error: "Missing required auth fields" });
+			return;
+		}
 
-	let payload = Buffer.concat([
-		tlvField(MCP_TAG.STRUCT_TYPE, Buffer.from([0x0a])),
-		tlvField(MCP_TAG.STRUCT_VERSION, Buffer.from([0x01])),
-		tlvField(MCP_TAG.CHAIN_ID, chainIdBuf),
-		tlvField(MCP_TAG.TOKEN_ID, tokenIdBuf),
-		tlvField(MCP_TAG.ISSUED_AT, issuedAtBuf),
-		tlvField(MCP_TAG.EXPIRES_AT, expiresAtBuf),
-		tlvField(MCP_TAG.ATTESTER_ID, Buffer.from([0x00])),
-		tlvField(MCP_TAG.MARKET_NAME, Buffer.from(String(marketName).slice(0, 128))),
-		tlvField(MCP_TAG.MARKET_OUTCOME, Buffer.from(String(marketOutcome).slice(0, 16))),
-		tlvField(MCP_TAG.MARKET_AMOUNT, Buffer.from(String(marketAmount).slice(0, 32))),
-		tlvField(MCP_TAG.MARKET_SHARES, Buffer.from(String(marketShares).slice(0, 32))),
-		tlvField(MCP_TAG.MARKET_PRICE, Buffer.from(String(marketPrice).slice(0, 32))),
-	]);
+		const now = Math.floor(Date.now() / 1000);
+		const expiresAt = now + 300;
+
+		const chainIdBuf = Buffer.alloc(8);
+		chainIdBuf.writeBigUInt64BE(BigInt(chainId));
+		const issuedAtBuf = Buffer.alloc(4);
+		issuedAtBuf.writeUInt32BE(now);
+		const expiresAtBuf = Buffer.alloc(4);
+		expiresAtBuf.writeUInt32BE(expiresAt);
+
+		payload = Buffer.concat([
+			tlvField(MCP_TAG.STRUCT_TYPE, Buffer.from([0x0b])),
+			tlvField(MCP_TAG.STRUCT_VERSION, Buffer.from([0x01])),
+			tlvField(MCP_TAG.CHAIN_ID, chainIdBuf),
+			tlvField(MCP_TAG.ISSUED_AT, issuedAtBuf),
+			tlvField(MCP_TAG.EXPIRES_AT, expiresAtBuf),
+			tlvField(MCP_TAG.AUTH_LABEL, Buffer.from(String(label).slice(0, 64))),
+			tlvField(MCP_TAG.AUTH_ADDRESS, Buffer.from(String(address).slice(0, 42))),
+		]);
+
+		console.log(`[MCP Sign] auth label="${label}" address=${address}`);
+	} else {
+		const { tokenId, chainId, marketName, marketOutcome, marketAmount, marketShares, marketPrice } =
+			req.body;
+		if (
+			!tokenId ||
+			!chainId ||
+			!marketName ||
+			!marketOutcome ||
+			!marketAmount ||
+			!marketShares ||
+			!marketPrice
+		) {
+			res.status(400).json({ error: "Missing required fields" });
+			return;
+		}
+
+		const now = Math.floor(Date.now() / 1000);
+		const expiresAt = now + 300;
+
+		const tokenIdBuf = Buffer.from(BigInt(tokenId).toString(16).padStart(64, "0"), "hex");
+		const chainIdBuf = Buffer.alloc(8);
+		chainIdBuf.writeBigUInt64BE(BigInt(chainId));
+		const issuedAtBuf = Buffer.alloc(4);
+		issuedAtBuf.writeUInt32BE(now);
+		const expiresAtBuf = Buffer.alloc(4);
+		expiresAtBuf.writeUInt32BE(expiresAt);
+
+		payload = Buffer.concat([
+			tlvField(MCP_TAG.STRUCT_TYPE, Buffer.from([0x0a])),
+			tlvField(MCP_TAG.STRUCT_VERSION, Buffer.from([0x01])),
+			tlvField(MCP_TAG.CHAIN_ID, chainIdBuf),
+			tlvField(MCP_TAG.TOKEN_ID, tokenIdBuf),
+			tlvField(MCP_TAG.ISSUED_AT, issuedAtBuf),
+			tlvField(MCP_TAG.EXPIRES_AT, expiresAtBuf),
+			tlvField(MCP_TAG.ATTESTER_ID, Buffer.from([0x00])),
+			tlvField(MCP_TAG.MARKET_NAME, Buffer.from(String(marketName).slice(0, 128))),
+			tlvField(MCP_TAG.MARKET_OUTCOME, Buffer.from(String(marketOutcome).slice(0, 16))),
+			tlvField(MCP_TAG.MARKET_AMOUNT, Buffer.from(String(marketAmount).slice(0, 32))),
+			tlvField(MCP_TAG.MARKET_SHARES, Buffer.from(String(marketShares).slice(0, 32))),
+			tlvField(MCP_TAG.MARKET_PRICE, Buffer.from(String(marketPrice).slice(0, 32))),
+		]);
+
+		console.log(
+			`[MCP Sign] market="${marketName}" outcome=${marketOutcome} shares=${marketShares} price=${marketPrice} total=${marketAmount}`,
+		);
+	}
 
 	const sign = createSign("SHA256");
 	sign.update(payload);
@@ -660,9 +699,6 @@ app.post("/api/market-context/sign", (req, res) => {
 
 	payload = Buffer.concat([payload, tlvField(MCP_TAG.DER_SIGNATURE, sig)]);
 
-	console.log(
-		`[MCP Sign] market="${marketName}" outcome=${marketOutcome} shares=${marketShares} price=${marketPrice} total=${marketAmount}`,
-	);
 	res.json({ payload: payload.toString("hex") });
 });
 

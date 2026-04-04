@@ -109,6 +109,7 @@ function buildAuthPayload(body: Record<string, unknown>): Buffer {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).end();
 
+  console.log("[MCP-SIGN] req.body:", JSON.stringify(req.body));
   const { type } = req.body;
   let payload: Buffer;
 

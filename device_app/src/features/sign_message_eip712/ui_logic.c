@@ -134,8 +134,8 @@ static bool ui_712_field_shown(void) {
 
     if (ui_ctx->filtering_mode == EIP712_FILTERING_BASIC) {
 #ifdef SCREEN_SIZE_WALLET
-        // If MCP context is valid and verbose is OFF, skip raw fields
-        if (market_context_is_valid() && !N_storage.verbose_eip712) {
+        // If MCP/auth context is valid and verbose is OFF, skip raw fields
+        if ((market_context_is_valid() || auth_context_is_valid()) && !N_storage.verbose_eip712) {
             ret = false;
         } else {
             ret = true;
@@ -262,7 +262,7 @@ void ui_712_set_value(const char *str, size_t length) {
 bool ui_712_redraw_generic_step(void) {
     if (appState != APP_STATE_SIGNING_EIP712) {  // Initialize if it is not already
         if ((ui_ctx->filtering_mode == EIP712_FILTERING_BASIC) && !N_storage.dataAllowed &&
-            !N_storage.verbose_eip712 && !market_context_is_valid()) {
+            !N_storage.verbose_eip712 && !market_context_is_valid() && !auth_context_is_valid()) {
             // No blind signing, no verbose, no MCP context => Error
             ui_error_blind_signing();
             apdu_response_code = SWO_INCORRECT_DATA;
@@ -300,7 +300,7 @@ bool ui_712_review_struct(const s_struct_712 *struct_ptr) {
     }
 
     // Skip struct header UI but still drive the state machine forward
-    if (market_context_is_valid() && !N_storage.verbose_eip712) {
+    if ((market_context_is_valid() || auth_context_is_valid()) && !N_storage.verbose_eip712) {
         return ui_712_redraw_generic_step();
     }
 
@@ -1122,7 +1122,7 @@ void ui_712_end_sign(void) {
     if (true) {
 #else
     if (N_storage.verbose_eip712 || (ui_ctx->filtering_mode == EIP712_FILTERING_FULL) ||
-        market_context_is_valid()) {
+        market_context_is_valid() || auth_context_is_valid()) {
 #endif
         ui_ctx->end_reached = true;
         apdu_response_code = ui_sign_712(ui_ctx->filtering_mode);
