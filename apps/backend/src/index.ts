@@ -574,6 +574,8 @@ const MCP_TAG = {
 	MARKET_NAME: 0x64,
 	MARKET_OUTCOME: 0x65,
 	MARKET_AMOUNT: 0x66,
+	MARKET_SHARES: 0x67,
+	MARKET_PRICE: 0x68,
 	DER_SIGNATURE: 0x15,
 } as const;
 
@@ -606,8 +608,17 @@ try {
 }
 
 app.post("/api/market-context/sign", (req, res) => {
-	const { tokenId, chainId, marketName, marketOutcome, marketAmount } = req.body;
-	if (!tokenId || !chainId || !marketName || !marketOutcome || !marketAmount) {
+	const { tokenId, chainId, marketName, marketOutcome, marketAmount, marketShares, marketPrice } =
+		req.body;
+	if (
+		!tokenId ||
+		!chainId ||
+		!marketName ||
+		!marketOutcome ||
+		!marketAmount ||
+		!marketShares ||
+		!marketPrice
+	) {
 		res.status(400).json({ error: "Missing required fields" });
 		return;
 	}
@@ -639,6 +650,8 @@ app.post("/api/market-context/sign", (req, res) => {
 		tlvField(MCP_TAG.MARKET_NAME, Buffer.from(String(marketName).slice(0, 128))),
 		tlvField(MCP_TAG.MARKET_OUTCOME, Buffer.from(String(marketOutcome).slice(0, 16))),
 		tlvField(MCP_TAG.MARKET_AMOUNT, Buffer.from(String(marketAmount).slice(0, 32))),
+		tlvField(MCP_TAG.MARKET_SHARES, Buffer.from(String(marketShares).slice(0, 32))),
+		tlvField(MCP_TAG.MARKET_PRICE, Buffer.from(String(marketPrice).slice(0, 32))),
 	]);
 
 	const sign = createSign("SHA256");
@@ -647,7 +660,9 @@ app.post("/api/market-context/sign", (req, res) => {
 
 	payload = Buffer.concat([payload, tlvField(MCP_TAG.DER_SIGNATURE, sig)]);
 
-	console.log(`[MCP Sign] market="${marketName}" outcome=${marketOutcome} amount=${marketAmount}`);
+	console.log(
+		`[MCP Sign] market="${marketName}" outcome=${marketOutcome} shares=${marketShares} price=${marketPrice} total=${marketAmount}`,
+	);
 	res.json({ payload: payload.toString("hex") });
 });
 

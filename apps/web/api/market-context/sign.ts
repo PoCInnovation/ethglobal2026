@@ -13,6 +13,8 @@ const TAG = {
   MARKET_NAME: 0x64,
   MARKET_OUTCOME: 0x65,
   MARKET_AMOUNT: 0x66,
+  MARKET_SHARES: 0x67,
+  MARKET_PRICE: 0x68,
   DER_SIGNATURE: 0x15,
 };
 
@@ -39,9 +41,9 @@ function tlvField(tag: number, value: Buffer): Buffer {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { tokenId, chainId, marketName, marketOutcome, marketAmount } =
+  const { tokenId, chainId, marketName, marketOutcome, marketAmount, marketShares, marketPrice } =
     req.body;
-  if (!tokenId || !chainId || !marketName || !marketOutcome || !marketAmount) {
+  if (!tokenId || !chainId || !marketName || !marketOutcome || !marketAmount || !marketShares || !marketPrice) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
@@ -71,6 +73,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     tlvField(TAG.MARKET_NAME, Buffer.from(marketName.slice(0, 128))),
     tlvField(TAG.MARKET_OUTCOME, Buffer.from(marketOutcome.slice(0, 16))),
     tlvField(TAG.MARKET_AMOUNT, Buffer.from(marketAmount.slice(0, 32))),
+    tlvField(TAG.MARKET_SHARES, Buffer.from(String(marketShares).slice(0, 32))),
+    tlvField(TAG.MARKET_PRICE, Buffer.from(String(marketPrice).slice(0, 32))),
   ]);
 
   // Sign SHA-256(payload) with SECP256K1 private key (DER format)

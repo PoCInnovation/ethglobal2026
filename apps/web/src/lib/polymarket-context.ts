@@ -11,8 +11,10 @@ export interface PolymarketMarketInfo {
   tokenId: bigint;
   chainId: number;
   marketName: string;
-  marketOutcome: string; // "YES" or "NO"
+  marketOutcome: string; // "Yes" or "No"
   marketAmount: string; // e.g., "50.00 USDC"
+  marketShares: string; // e.g., "76.92 shares"
+  marketPrice: string; // e.g., "0.65 USDC"
   makerAmount: bigint;
   takerAmount: bigint;
   side: number; // 0 = BUY, 1 = SELL
@@ -37,8 +39,9 @@ async function fetchMarketMetadata(
   question: string;
   outcome: string;
 }> {
-  const tokenIdHex = tokenId.toString(16).padStart(64, "0");
-  const url = `${POLYMARKET_CLOB_API}/markets?clob_token_ids=${tokenIdHex}`;
+  // Polymarket CLOB API accepts decimal tokenId strings
+  const tokenIdStr = tokenId.toString();
+  const url = `${POLYMARKET_CLOB_API}/markets?clob_token_ids=${tokenIdStr}`;
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`Polymarket API error: ${res.status}`);
@@ -50,12 +53,12 @@ async function fetchMarketMetadata(
   }> = data?.data ?? data;
 
   if (!markets || markets.length === 0) {
-    throw new Error(`No market found for tokenId ${tokenIdHex}`);
+    throw new Error(`No market found for tokenId ${tokenIdStr}`);
   }
   const market = markets[0]!;
-  const tokenHex = tokenId.toString(16).padStart(64, "0");
+  // Match by decimal string (Polymarket returns token_id as decimal)
   const token = market.tokens.find(
-    (t) => t.token_id.toLowerCase() === tokenHex.toLowerCase()
+    (t) => t.token_id === tokenIdStr
   );
   const outcome = token?.outcome ?? "UNKNOWN";
   return { question: market.question, outcome };
@@ -76,9 +79,18 @@ export async function buildPolymarketContext(
 
   const { question, outcome } = await fetchMarketMetadata(tokenId);
 
-  // Format USDC amount (6 decimals)
+  // BUY: makerAmount = USDC paid, takerAmount = shares received
+  // SELL: makerAmount = shares sold, takerAmount = USDC received
   const usdcAmount = side === 0 ? makerAmount : takerAmount;
+  const sharesAmount = side === 0 ? takerAmount : makerAmount;
   const formattedAmount = `${(Number(usdcAmount) / 1_000_000).toFixed(2)} USDC`;
+  const formattedShares = `${(Number(sharesAmount) / 1_000_000).toFixed(2)} shares`;
+  // Price per share = USDC / shares
+  const pricePerShare =
+    sharesAmount > 0n
+      ? Number(usdcAmount) / Number(sharesAmount)
+      : 0;
+  const formattedPrice = `${pricePerShare.toFixed(4)} USDC`;
 
   return {
     tokenId,
@@ -86,6 +98,8 @@ export async function buildPolymarketContext(
     marketName: question.slice(0, 100), // truncate for device display
     marketOutcome: outcome,
     marketAmount: formattedAmount,
+    marketShares: formattedShares,
+    marketPrice: formattedPrice,
     makerAmount,
     takerAmount,
     side,
@@ -107,6 +121,8 @@ export async function fetchSignedMCPPayload(
       marketName: info.marketName,
       marketOutcome: info.marketOutcome,
       marketAmount: info.marketAmount,
+      marketShares: info.marketShares,
+      marketPrice: info.marketPrice,
     }),
   });
   if (!res.ok) {
