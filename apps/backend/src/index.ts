@@ -765,7 +765,21 @@ app.get("/api/polymarket/simulate", async (req, res) => {
 		// Determine negRisk from Gamma API
 		const negRisk = market.negRisk === true || market.negRisk === "true";
 
-		console.log(`[Simulate] tokenId=${tokenId} price=${price} outcome=${outcome} negRisk=${negRisk}`);
+		// Get authoritative tick size from CLOB API (Gamma's minimum_tick_size is unreliable)
+		let tickSize = "0.01"; // fallback
+		try {
+			const tickRes = await fetch(`https://clob.polymarket.com/tick-size?token_id=${tokenId}`);
+			if (tickRes.ok) {
+				const tickData = await tickRes.json();
+				tickSize = tickData?.minimum_tick_size ?? tickData ?? "0.01";
+				if (typeof tickSize === "number") tickSize = String(tickSize);
+			}
+		} catch {
+			// fallback to Gamma or default
+			tickSize = market.minimum_tick_size ?? "0.01";
+		}
+
+		console.log(`[Simulate] tokenId=${tokenId} price=${price} outcome=${outcome} negRisk=${negRisk} tickSize=${tickSize}`);
 
 		res.json({
 			tokenId,
@@ -773,7 +787,7 @@ app.get("/api/polymarket/simulate", async (req, res) => {
 			outcome,
 			price,
 			negRisk,
-			tickSize: market.minimum_tick_size ?? "0.01",
+			tickSize,
 		});
 	} catch (err) {
 		console.error("[Polymarket] Simulate failed:", err);

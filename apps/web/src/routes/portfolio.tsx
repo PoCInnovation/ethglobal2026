@@ -83,11 +83,17 @@ function PortfolioPage() {
 				const simulation = await simulateOrder(position.asset);
 				console.log("[Portfolio] Simulation:", simulation);
 
-				const price = simulation.price;
+				// Round price to nearest tick (ensure it's never 0)
+				const tickSize = Number.parseFloat(simulation.tickSize);
+				const tickDecimals = Math.round(-Math.log10(tickSize));
+				const ticks = Math.max(1, Math.round(simulation.price / tickSize));
+				const priceRounded = Number((ticks * tickSize).toFixed(tickDecimals));
+
 				const sharesAtomic = BigInt(Math.round(position.size * 1_000_000)).toString();
 				const usdcAtomic = BigInt(
-					Math.round(position.size * price * 1_000_000),
+					Math.round(position.size * priceRounded * 1_000_000),
 				).toString();
+				console.log("[Portfolio] Sell price rounded:", { raw: simulation.price, rounded: priceRounded, tickSize: simulation.tickSize });
 
 				// Pick correct exchange contract
 				const CTF_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E";
