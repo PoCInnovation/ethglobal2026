@@ -71,29 +71,34 @@ async function fetchMarketMetadata(
   question: string;
   outcome: string;
 }> {
-  // Polymarket CLOB API accepts decimal tokenId strings
   const tokenIdStr = tokenId.toString();
-  const url = `${POLYMARKET_CLOB_API}/markets?clob_token_ids=${tokenIdStr}`;
+
+  // Use Gamma API via backend proxy to avoid browser CORS issues
+  const url = `${API_BASE}/api/polymarket/market-lookup?tokenId=${tokenIdStr}`;
   const res = await fetch(url);
   if (!res.ok) {
-    throw new Error(`Polymarket API error: ${res.status}`);
+    throw new Error(`Market lookup failed: ${res.status}`);
   }
-  const data = await res.json();
-  const markets: Array<{
-    question: string;
-    tokens: Array<{ token_id: string; outcome: string }>;
-  }> = data?.data ?? data;
-
-  if (!markets || markets.length === 0) {
+  const markets = await res.json();
+  if (!Array.isArray(markets) || markets.length === 0) {
     throw new Error(`No market found for tokenId ${tokenIdStr}`);
   }
-  const market = markets[0]!;
-  // Match by decimal string (Polymarket returns token_id as decimal)
-  const token = market.tokens.find(
-    (t) => t.token_id === tokenIdStr
-  );
-  const outcome = token?.outcome ?? "UNKNOWN";
-  return { question: market.question, outcome };
+  const market = markets[0];
+
+  // Gamma API uses separate arrays: outcomes, outcomePrices, clobTokenIds
+  const clobTokenIds: string[] = typeof market.clobTokenIds === "string"
+    ? JSON.parse(market.clobTokenIds)
+    : market.clobTokenIds ?? [];
+  const outcomes: string[] = typeof market.outcomes === "string"
+    ? JSON.parse(market.outcomes)
+    : market.outcomes ?? [];
+  const tokenIndex = clobTokenIds.findIndex((id: string) => id === tokenIdStr);
+  const outcome = tokenIndex >= 0 ? outcomes[tokenIndex] ?? "UNKNOWN" : "UNKNOWN";
+
+  return {
+    question: market.question ?? market.title ?? "Unknown Market",
+    outcome,
+  };
 }
 
 /**
@@ -109,9 +114,7 @@ export async function buildPolymarketContext(
   const takerAmount = BigInt(message.takerAmount as string);
   const side = Number(message.side);
 
-  // TODO: fetch real market metadata from Polymarket CLOB API
-  const question = "Will ETH hit $5k by end of 2025?";
-  const outcome = "Yes";
+  const { question, outcome } = await fetchMarketMetadata(tokenId);
 
   // BUY: makerAmount = USDC paid, takerAmount = shares received
   // SELL: makerAmount = shares sold, takerAmount = USDC received

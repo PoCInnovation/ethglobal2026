@@ -702,6 +702,85 @@ app.post("/api/market-context/sign", (req, res) => {
 	res.json({ payload: payload.toString("hex") });
 });
 
+// ============ Polymarket Market Lookup Proxy ============
+
+// Proxy Gamma API requests to avoid browser CORS issues
+app.get("/api/polymarket/market-lookup", async (req, res) => {
+	const tokenId = req.query.tokenId as string;
+	if (!tokenId) {
+		res.status(400).json({ error: "Missing tokenId" });
+		return;
+	}
+	try {
+		const gammaRes = await fetch(
+			`https://gamma-api.polymarket.com/markets?clob_token_ids=${tokenId}`,
+		);
+		if (!gammaRes.ok) {
+			res.status(gammaRes.status).json({ error: "Gamma API error" });
+			return;
+		}
+		const data = await gammaRes.json();
+		res.json(data);
+	} catch (err) {
+		console.error("[Polymarket] Market lookup failed:", err);
+		res.status(500).json({ error: "Market lookup failed" });
+	}
+});
+
+// Get latest price + market info for a token (simulation before signing)
+app.get("/api/polymarket/simulate", async (req, res) => {
+	const tokenId = req.query.tokenId as string;
+	if (!tokenId) {
+		res.status(400).json({ error: "Missing tokenId" });
+		return;
+	}
+	try {
+		// Fetch from Gamma API to get negRisk + current price
+		const gammaRes = await fetch(
+			`https://gamma-api.polymarket.com/markets?clob_token_ids=${tokenId}`,
+		);
+		if (!gammaRes.ok) {
+			res.status(gammaRes.status).json({ error: "Gamma API error" });
+			return;
+		}
+		const markets = await gammaRes.json();
+		if (!Array.isArray(markets) || markets.length === 0) {
+			res.status(404).json({ error: "Market not found" });
+			return;
+		}
+		const market = markets[0];
+
+		// Parse clobTokenIds and outcomePrices
+		const clobTokenIds: string[] = typeof market.clobTokenIds === "string"
+			? JSON.parse(market.clobTokenIds) : market.clobTokenIds ?? [];
+		const outcomes: string[] = typeof market.outcomes === "string"
+			? JSON.parse(market.outcomes) : market.outcomes ?? [];
+		const outcomePrices: string[] = typeof market.outcomePrices === "string"
+			? JSON.parse(market.outcomePrices) : market.outcomePrices ?? [];
+
+		const tokenIndex = clobTokenIds.findIndex((id: string) => id === tokenId);
+		const outcome = tokenIndex >= 0 ? outcomes[tokenIndex] ?? "UNKNOWN" : "UNKNOWN";
+		const price = tokenIndex >= 0 ? Number.parseFloat(outcomePrices[tokenIndex] ?? "0") : 0;
+
+		// Determine negRisk from Gamma API
+		const negRisk = market.negRisk === true || market.negRisk === "true";
+
+		console.log(`[Simulate] tokenId=${tokenId} price=${price} outcome=${outcome} negRisk=${negRisk}`);
+
+		res.json({
+			tokenId,
+			question: market.question ?? market.title ?? "Unknown Market",
+			outcome,
+			price,
+			negRisk,
+			tickSize: market.minimum_tick_size ?? "0.01",
+		});
+	} catch (err) {
+		console.error("[Polymarket] Simulate failed:", err);
+		res.status(500).json({ error: "Simulation failed" });
+	}
+});
+
 // ============ Polymarket CLOB Credentials ============
 
 interface PolymarketCredentials {
@@ -772,6 +851,93 @@ app.delete("/api/polymarket/credentials", (req, res) => {
 	polymarketCreds.delete(session.walletAddress);
 	console.log(`[Polymarket] Credentials removed for ${session.walletAddress}`);
 	res.json({ success: true });
+});
+
+// ============ Polymarket CLOB Order Proxy ============
+// Proxy order submissions to avoid browser CORS issues with clob.polymarket.com
+
+app.post("/api/polymarket/order", async (req, res) => {
+	const cookies = parseCookies(req.headers.cookie);
+	const sessionId = cookies[SESSION_COOKIE_NAME];
+	const session = sessionId ? authSessions.get(sessionId) : undefined;
+	if (!session || session.expiresAt < Date.now()) {
+		res.status(401).json({ success: false, error: "Authentication required" });
+		return;
+	}
+
+	const creds = polymarketCreds.get(session.walletAddress);
+	if (!creds) {
+		res.status(400).json({ success: false, error: "No Polymarket credentials. Connect in Settings." });
+		return;
+	}
+
+	const { orderBody, walletAddress } = req.body as { orderBody: string; walletAddress: string };
+	if (!orderBody || !walletAddress) {
+		res.status(400).json({ success: false, error: "Missing orderBody or walletAddress" });
+		return;
+	}
+
+	// Fix the 'owner' field: Polymarket SDK sets owner = API key, not wallet address
+	let fixedOrderBody: string;
+	try {
+		const parsed = JSON.parse(orderBody);
+		parsed.owner = creds.apiKey;
+		fixedOrderBody = JSON.stringify(parsed);
+	} catch {
+		res.status(400).json({ success: false, error: "Invalid orderBody JSON" });
+		return;
+	}
+
+	console.log(`[CLOB Proxy] Fixed owner from ${walletAddress} to API key ${creds.apiKey.slice(0, 8)}...`);
+
+	// Build HMAC signature server-side (using the fixed body)
+	const timestamp = Math.floor(Date.now() / 1000).toString();
+	const requestPath = "/order";
+	const message = `${timestamp}POST${requestPath}${fixedOrderBody}`;
+
+	const crypto = await import("node:crypto");
+	const hmac = crypto.createHmac("sha256", Buffer.from(creds.secret, "base64"));
+	hmac.update(message);
+	const hmacSig = hmac.digest("base64").replace(/\+/g, "-").replace(/\//g, "_");
+
+	const clobUrl = `https://clob.polymarket.com${requestPath}`;
+	console.log(`[CLOB Proxy] Submitting order for ${walletAddress}`);
+	console.log(`[CLOB Proxy] POST body: ${fixedOrderBody}`);
+
+	try {
+		const clobRes = await fetch(clobUrl, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				POLY_ADDRESS: walletAddress,
+				POLY_API_KEY: creds.apiKey,
+				POLY_PASSPHRASE: creds.passphrase,
+				POLY_SIGNATURE: hmacSig,
+				POLY_TIMESTAMP: timestamp,
+			},
+			body: fixedOrderBody,
+		});
+
+		const responseText = await clobRes.text();
+		console.log(`[CLOB Proxy] Response: ${clobRes.status} ${responseText}`);
+
+		let data: Record<string, unknown> = {};
+		try { data = JSON.parse(responseText); } catch { /* not json */ }
+
+		if (!clobRes.ok) {
+			res.status(clobRes.status).json({
+				success: false,
+				error: data?.error || data?.message || `CLOB error ${clobRes.status}`,
+				raw: responseText,
+			});
+			return;
+		}
+
+		res.json({ success: true, ...data });
+	} catch (err) {
+		console.error("[CLOB Proxy] Network error:", err);
+		res.status(502).json({ success: false, error: "Failed to reach Polymarket CLOB" });
+	}
 });
 
 // ============ Demo/Debug ============

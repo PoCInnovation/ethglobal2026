@@ -25,8 +25,8 @@ import {
 	isTransferIntent,
 } from "@agent-intents/shared";
 import { buildPolymarketTx } from "@/lib/polymarket";
-import { buildOrderFromIntent } from "@/lib/polymarket-order";
-import { submitSignedOrder } from "@/lib/polymarket-submit";
+import { buildOrderFromIntent, simulateOrder } from "@/lib/polymarket-order";
+import { checkPolymarketConnection, submitSignedOrder } from "@/lib/polymarket-submit";
 import { PolymarketIntentDetail } from "./PolymarketIntentDetail";
 import { Button, Tag } from "@ledgerhq/lumen-ui-react";
 import { Check, Copy } from "@ledgerhq/lumen-ui-react/symbols";
@@ -662,13 +662,27 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 				setError("Market data not enriched (missing tokenId)");
 				return;
 			}
+			const connected = await checkPolymarketConnection();
+			if (!connected) {
+				setError("Connect to Polymarket first (Settings > Polymarket)");
+				return;
+			}
 			setIsSigning(true);
 			try {
-				const order = buildOrderFromIntent(polyDetails, account);
-				const signature = await signTypedDataV4(order);
-				console.log("[Polymarket] Signed order:", { order: order.message, signature });
+				// Step 1: Simulate — fetch latest price + negRisk
+				console.log("[Polymarket] Simulating order for tokenId:", polyDetails.tokenId);
+				const simulation = await simulateOrder(polyDetails.tokenId);
+				console.log("[Polymarket] Simulation:", simulation);
 
-				// Submit to CLOB
+				// Step 2: Build order with fresh price
+				const order = buildOrderFromIntent(polyDetails, account, simulation);
+				console.log("[Polymarket] Order built:", order.message);
+
+				// Step 3: Sign on Ledger
+				const signature = await signTypedDataV4(order);
+				console.log("[Polymarket] Signed:", signature);
+
+				// Step 4: Submit to CLOB
 				const result = await submitSignedOrder(order.message, signature, account);
 				if (!result.success) {
 					throw new Error(result.errorMsg || "CLOB submission failed");

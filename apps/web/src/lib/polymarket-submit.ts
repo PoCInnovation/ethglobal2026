@@ -1,53 +1,27 @@
 /**
- * Submit signed Polymarket orders to the CLOB API.
+ * Submit signed Polymarket orders to the CLOB API via backend proxy.
  *
- * Fetches L2 credentials from our backend, builds HMAC headers,
- * and POSTs the order to clob.polymarket.com.
+ * The browser cannot POST directly to clob.polymarket.com (CORS).
+ * Instead, we send the order to our backend which adds HMAC auth headers
+ * and proxies the request.
  */
 
-const CLOB_API = "https://clob.polymarket.com";
 const API_BASE = "";
 
-interface StoredCredentials {
-	apiKey: string;
-	secret: string;
-	passphrase: string;
-}
-
-async function getStoredCredentials(): Promise<StoredCredentials | null> {
+/**
+ * Check if Polymarket CLOB credentials are available (fast check, no secrets returned).
+ */
+export async function checkPolymarketConnection(): Promise<boolean> {
 	try {
-		const res = await fetch(`${API_BASE}/api/polymarket/credentials/full`, {
+		const res = await fetch(`${API_BASE}/api/polymarket/credentials`, {
 			credentials: "include",
 		});
-		if (!res.ok) return null;
+		if (!res.ok) return false;
 		const data = await res.json();
-		if (!data.success || !data.credentials) return null;
-		return data.credentials;
+		return data?.connected === true;
 	} catch {
-		return null;
+		return false;
 	}
-}
-
-async function buildHmacSignature(
-	secret: string,
-	timestamp: string,
-	method: string,
-	requestPath: string,
-	body?: string,
-): Promise<string> {
-	const message = `${timestamp}${method}${requestPath}${body ?? ""}`;
-	const encoder = new TextEncoder();
-	const keyBytes = Uint8Array.from(atob(secret), (c) => c.charCodeAt(0));
-	const key = await crypto.subtle.importKey(
-		"raw",
-		keyBytes,
-		{ name: "HMAC", hash: "SHA-256" },
-		false,
-		["sign"],
-	);
-	const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
-	const b64 = btoa(String.fromCharCode(...new Uint8Array(sig)));
-	return b64.replace(/\+/g, "-").replace(/\//g, "_");
 }
 
 export interface SubmitOrderResult {
@@ -58,7 +32,7 @@ export interface SubmitOrderResult {
 }
 
 /**
- * Submit a signed order to the Polymarket CLOB.
+ * Submit a signed order to the Polymarket CLOB via backend proxy.
  *
  * @param order - The order message fields (from EIP-712 message)
  * @param signature - The EIP-712 signature from the Ledger
@@ -69,13 +43,13 @@ export async function submitSignedOrder(
 	signature: string,
 	walletAddress: string,
 ): Promise<SubmitOrderResult> {
-	const creds = await getStoredCredentials();
-	if (!creds) {
-		return { success: false, errorMsg: "Polymarket credentials not found. Connect in Settings." };
-	}
+	console.log("[CLOB] ========== ORDER SUBMISSION START ==========");
+	console.log("[CLOB] Wallet:", walletAddress);
+	console.log("[CLOB] Order fields:", JSON.stringify(order, null, 2));
+	console.log("[CLOB] Signature:", signature);
 
-	const requestPath = "/order";
-	const timestamp = Math.floor(Date.now() / 1000).toString();
+	// Build the CLOB order body (same format as Polymarket SDK)
+	const sideStr = Number(order.side) === 0 ? "BUY" : "SELL";
 
 	const orderBody = JSON.stringify({
 		order: {
@@ -89,7 +63,7 @@ export async function submitSignedOrder(
 			expiration: order.expiration,
 			nonce: order.nonce,
 			feeRateBps: order.feeRateBps,
-			side: Number(order.side),
+			side: sideStr,
 			signatureType: Number(order.signatureType),
 			signature,
 		},
@@ -97,41 +71,41 @@ export async function submitSignedOrder(
 		orderType: "GTC",
 	});
 
-	const hmacSig = await buildHmacSignature(
-		creds.secret,
-		timestamp,
-		"POST",
-		requestPath,
-		orderBody,
-	);
+	console.log("[CLOB] Order body:", orderBody);
 
-	const res = await fetch(`${CLOB_API}${requestPath}`, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			POLY_ADDRESS: walletAddress,
-			POLY_API_KEY: creds.apiKey,
-			POLY_PASSPHRASE: creds.passphrase,
-			POLY_SIGNATURE: hmacSig,
-			POLY_TIMESTAMP: timestamp,
-		},
-		body: orderBody,
-	});
+	// Submit via backend proxy (avoids CORS, backend adds HMAC headers)
+	try {
+		console.log("[CLOB] Submitting via backend proxy...");
+		const res = await fetch(`${API_BASE}/api/polymarket/order`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			credentials: "include",
+			body: JSON.stringify({ orderBody, walletAddress }),
+		});
 
-	const data = await res.json().catch(() => ({}));
+		const data = await res.json().catch(() => ({ error: "Invalid response" }));
+		console.log("[CLOB] Proxy response:", res.status, JSON.stringify(data));
 
-	if (!res.ok) {
-		console.error("[CLOB] Order submission failed:", res.status, data);
+		if (!res.ok || !data.success) {
+			const errorMsg = data?.error || data?.message || `CLOB error ${res.status}`;
+			console.error("[CLOB] FAILED:", errorMsg);
+			if (data?.raw) console.error("[CLOB] Raw CLOB response:", data.raw);
+			console.log("[CLOB] ========== ORDER SUBMISSION FAILED ==========");
+			return { success: false, errorMsg };
+		}
+
+		console.log("[CLOB] SUCCESS! OrderID:", data.orderID ?? data.id);
+		console.log("[CLOB] Status:", data.status);
+		console.log("[CLOB] ========== ORDER SUBMISSION SUCCESS ==========");
 		return {
-			success: false,
-			errorMsg: data?.error || data?.message || `CLOB error ${res.status}`,
+			success: true,
+			orderID: data.orderID ?? data.id,
+			status: data.status,
 		};
+	} catch (err) {
+		const errorMsg = err instanceof Error ? err.message : "Network error";
+		console.error("[CLOB] NETWORK ERROR:", errorMsg);
+		console.log("[CLOB] ========== ORDER SUBMISSION NETWORK ERROR ==========");
+		return { success: false, errorMsg };
 	}
-
-	console.log("[CLOB] Order submitted:", data);
-	return {
-		success: true,
-		orderID: data.orderID ?? data.id,
-		status: data.status,
-	};
 }

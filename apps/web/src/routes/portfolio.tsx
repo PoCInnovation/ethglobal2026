@@ -1,6 +1,7 @@
 import { Spinner } from "@/components/ui/Spinner";
 import { useLedger } from "@/lib/ledger-provider";
-import { submitSignedOrder } from "@/lib/polymarket-submit";
+import { simulateOrder } from "@/lib/polymarket-order";
+import { checkPolymarketConnection, submitSignedOrder } from "@/lib/polymarket-submit";
 import { useWalletAuth } from "@/lib/wallet-auth";
 import { Button, Tag } from "@ledgerhq/lumen-ui-react";
 import { createFileRoute } from "@tanstack/react-router";
@@ -30,10 +31,15 @@ interface PolymarketPosition {
 }
 
 async function fetchPositions(wallet: string): Promise<PolymarketPosition[]> {
-	const url = `${POSITIONS_API}?user=${wallet}&sizeThreshold=0.01&sortBy=CURRENT&sortDirection=DESC&limit=100`;
+	// Polymarket API may be case-sensitive — use lowercase
+	const lowerWallet = wallet.toLowerCase();
+	const url = `${POSITIONS_API}?user=${lowerWallet}&sizeThreshold=0&sortBy=CURRENT&sortDirection=DESC&limit=100`;
+	console.log("[Portfolio] Fetching positions:", url);
 	const res = await fetch(url);
 	if (!res.ok) throw new Error(`Positions API error: ${res.status}`);
-	return res.json();
+	const data = await res.json();
+	console.log("[Portfolio] API response:", JSON.stringify(data).slice(0, 500));
+	return data;
 }
 
 function PortfolioPage() {
@@ -65,21 +71,43 @@ function PortfolioPage() {
 	const handleSell = useCallback(
 		async (position: PolymarketPosition) => {
 			if (!account) return;
+			const connected = await checkPolymarketConnection();
+			if (!connected) {
+				setError("Connect to Polymarket first (Settings > Polymarket)");
+				return;
+			}
 			setSelling(position.asset);
 			try {
+				// Step 1: Simulate — fetch latest price + negRisk
+				console.log("[Portfolio] Simulating sell for tokenId:", position.asset);
+				const simulation = await simulateOrder(position.asset);
+				console.log("[Portfolio] Simulation:", simulation);
+
+				const price = simulation.price;
 				const sharesAtomic = BigInt(Math.round(position.size * 1_000_000)).toString();
 				const usdcAtomic = BigInt(
-					Math.round(position.size * position.curPrice * 1_000_000),
+					Math.round(position.size * price * 1_000_000),
 				).toString();
 
+				// Pick correct exchange contract
+				const CTF_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E";
+				const NEG_RISK_CTF_EXCHANGE = "0xC5d563A36AE78145C45a50134d48A1215220f80a";
+				const verifyingContract = simulation.negRisk ? NEG_RISK_CTF_EXCHANGE : CTF_EXCHANGE;
+
 				const order = {
-					domain: { name: "ClobAuthDomain", version: "1", chainId: 137 },
+					domain: {
+						name: "Polymarket CTF Exchange",
+						version: "1",
+						chainId: 137,
+						verifyingContract,
+					},
 					primaryType: "Order" as const,
 					types: {
 						EIP712Domain: [
 							{ name: "name", type: "string" },
 							{ name: "version", type: "string" },
 							{ name: "chainId", type: "uint256" },
+							{ name: "verifyingContract", type: "address" },
 						],
 						Order: [
 							{ name: "salt", type: "uint256" },
@@ -97,13 +125,13 @@ function PortfolioPage() {
 						],
 					},
 					message: {
-						salt: String(Math.floor(Math.random() * 1_000_000_000)),
+						salt: String(Math.round(Math.random() * Date.now())),
 						maker: account,
 						signer: account,
 						taker: "0x0000000000000000000000000000000000000000",
 						tokenId: position.asset,
-						makerAmount: sharesAtomic,
-						takerAmount: usdcAtomic,
+						makerAmount: sharesAtomic, // SELL: shares being sold
+						takerAmount: usdcAtomic,   // SELL: USDC to receive
 						expiration: "0",
 						nonce: "0",
 						feeRateBps: "0",
@@ -112,9 +140,13 @@ function PortfolioPage() {
 					},
 				};
 
-				const signature = await signTypedDataV4(order);
-				console.log("[Portfolio] Sell order signed:", { order: order.message, signature });
+				console.log("[Portfolio] Sell order built:", order.message);
 
+				// Step 2: Sign on Ledger
+				const signature = await signTypedDataV4(order);
+				console.log("[Portfolio] Sell order signed:", signature);
+
+				// Step 3: Submit to CLOB
 				const result = await submitSignedOrder(order.message, signature, account);
 				if (!result.success) {
 					throw new Error(result.errorMsg || "CLOB submission failed");
