@@ -9,6 +9,7 @@
 #include "apdu_constants.h"  // APDU response codes
 #include "shared_context.h"  // reset_app_context
 #include "common_ui.h"       // ui_idle
+#include "features/provide_market_context/market_context.h"
 
 e_struct_init struct_state = NOT_INITIALIZED;
 s_eip712_context *eip712_context = NULL;
@@ -23,6 +24,9 @@ bool eip712_context_init(void) {
         eip712_context_deinit();
         return false;
     }
+
+    // Clear stale MCP context unless a fresh one was just received
+    market_context_consume_or_clear();
 
     // init global variables
     if (APP_MEM_CALLOC((void **) &eip712_context, sizeof(*eip712_context)) == false) {

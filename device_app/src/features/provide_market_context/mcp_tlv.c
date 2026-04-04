@@ -191,6 +191,7 @@ bool mcp_parse_payload(const buffer_t *buf) {
         return false;
     }
     g_market_context.verified = true;
+    g_market_context_fresh = true;
     PRINTF("[MCP] Valid context: %s | %s | %s\n",
            g_market_context.market_name,
            g_market_context.market_outcome,
