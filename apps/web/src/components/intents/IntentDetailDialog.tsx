@@ -1,4 +1,5 @@
 import type { Intent } from "@agent-intents/shared";
+import * as RadixDialog from "@radix-ui/react-dialog";
 import {
 	Dialog,
 	DialogBody,
@@ -26,55 +27,284 @@ interface IntentDetailDialogProps {
 // Component
 // =============================================================================
 
-/**
- * Dialog wrapper for displaying intent details for approval.
- * Uses Lumen Dialog components with controlled open state.
- */
-export function IntentDetailDialog({ intent, open, onOpenChange, councilAlreadyDone = false, onCouncilComplete }: IntentDetailDialogProps) {
+export function IntentDetailDialog({
+	intent,
+	open,
+	onOpenChange,
+	councilAlreadyDone = false,
+	onCouncilComplete,
+}: IntentDetailDialogProps) {
 	const [councilDone, setCouncilDone] = useState(councilAlreadyDone);
-	const handleCouncilComplete = useCallback(() => {
-		setCouncilDone(true);
-		onCouncilComplete?.(intent?.id ?? "");
-	}, [intent?.id, onCouncilComplete]);
+
+	const handleCouncilComplete = useCallback(
+		(_result: { approved: boolean; ratio: number }) => {
+			setCouncilDone(true);
+			onCouncilComplete?.(intent?.id ?? "");
+		},
+		[intent?.id, onCouncilComplete],
+	);
 
 	if (!intent) return null;
 
 	const handleClose = () => onOpenChange(false);
 	const isTransfer = intent.details.type === "transfer";
-	const isX402 = isTransfer && !!(intent.details as { x402?: { accepted?: unknown } }).x402?.accepted;
+	const isX402 =
+		isTransfer &&
+		!!(intent.details as { x402?: { accepted?: unknown } }).x402?.accepted;
 	const isPolymarket = intent.details.type === "polymarket_trade";
 	const isPending = intent.status === "pending";
+
 	const dialogTitle = isPolymarket
 		? "Review Polymarket Trade"
 		: isX402
 			? "Authorize API Payment"
 			: "Review Transfer";
 
+	// ─── Polymarket: full-control Radix dialog, two-panel layout ─────────────
+	if (isPolymarket) {
+		return (
+			<RadixDialog.Root open={open} onOpenChange={onOpenChange}>
+				<RadixDialog.Portal>
+					{/* Overlay */}
+					<RadixDialog.Overlay
+						className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out"
+					/>
+
+					{/* Content — full control, no Lumen constraints */}
+					<RadixDialog.Content
+						aria-describedby={undefined}
+						className="fixed left-1/2 top-1/2 z-[100] -translate-x-1/2 -translate-y-1/2 w-[calc(100vw-48px)] max-w-[1200px] rounded-2xl overflow-hidden shadow-2xl outline-none data-[state=open]:animate-content-show data-[state=closed]:animate-content-hide"
+						style={{ background: "#111113", border: "1px solid rgba(255,255,255,0.07)" }}
+					>
+						{/* Header bar */}
+						<div
+							className="flex items-center justify-between px-24 py-20 border-b"
+							style={{ borderColor: "rgba(255,255,255,0.07)" }}
+						>
+							<div className="flex items-center gap-12">
+								<span
+									className="text-[11px] font-mono uppercase tracking-[0.15em]"
+									style={{ color: "#4a4a55" }}
+								>
+									Council Review
+								</span>
+								<span style={{ color: "#333" }}>·</span>
+								<RadixDialog.Title className="text-[14px] font-semibold text-white/80">
+									{dialogTitle}
+								</RadixDialog.Title>
+							</div>
+							<RadixDialog.Close
+								className="flex items-center justify-center w-[32px] h-[32px] rounded-lg text-white/30 hover:text-white/80 hover:bg-white/5 transition-colors text-[20px] leading-none"
+								aria-label="Close"
+							>
+								×
+							</RadixDialog.Close>
+						</div>
+
+						{/* Two-panel body */}
+						<div className="flex" style={{ height: "calc(100vh - 120px)", maxHeight: "820px" }}>
+
+							{/* ── Left panel (260px) — trade info + actions ── */}
+							<div
+								className="w-[380px] flex-shrink-0 flex flex-col border-r overflow-hidden"
+								style={{ borderColor: "rgba(255,255,255,0.07)" }}
+							>
+								{/* Scrollable trade details */}
+								<div className="flex-1 overflow-y-auto px-16 py-16" style={{ scrollbarWidth: "none" }}>
+									<IntentDetailContent intent={intent} />
+								</div>
+
+								{/* Pinned action footer */}
+								<div
+									className="px-16 py-14 border-t flex flex-col gap-8"
+									style={{ borderColor: "rgba(255,255,255,0.07)" }}
+								>
+									{isPending && !councilDone ? (
+										<div className="flex items-center justify-center gap-6 py-6">
+											<span
+												className="size-[5px] rounded-full animate-pulse"
+												style={{ background: "#4a90d9" }}
+											/>
+											<span className="text-[11px] font-mono" style={{ color: "#4a4a55" }}>
+												Awaiting council…
+											</span>
+										</div>
+									) : (
+										<IntentDetailContent.Actions intent={intent} onClose={handleClose} />
+									)}
+								</div>
+							</div>
+
+							{/* ── Right panel — deliberation chat ── */}
+							<div
+								className="flex-1 flex flex-col min-w-0 overflow-hidden"
+								style={{ background: "#0d0d0f" }}
+							>
+								{isPending ? (
+									<CouncilDeliberation
+										intentId={intent.id}
+										onComplete={handleCouncilComplete}
+									/>
+								) : (
+									<CouncilResultReadonly intent={intent} />
+								)}
+							</div>
+						</div>
+					</RadixDialog.Content>
+				</RadixDialog.Portal>
+			</RadixDialog.Root>
+		);
+	}
+
+	// ─── Default: Lumen dialog for transfers / x402 ───────────────────────────
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="max-w-[540px]">
 				<DialogHeader appearance="compact" title={dialogTitle} onClose={handleClose} />
 				<DialogBody>
 					<IntentDetailContent intent={intent} />
-					{isPolymarket && isPending && (
-						<div className="mt-16">
-							<CouncilDeliberation
-								intentId={intent.id}
-								onComplete={handleCouncilComplete}
-							/>
-						</div>
-					)}
 				</DialogBody>
 				<DialogFooter>
-					{isPolymarket && isPending && !councilDone ? (
-						<div className="flex items-center justify-center gap-8 py-8 w-full body-2 text-muted">
-							Waiting for council deliberation…
-						</div>
-					) : (
-						<IntentDetailContent.Actions intent={intent} onClose={handleClose} />
-					)}
+					<IntentDetailContent.Actions intent={intent} onClose={handleClose} />
 				</DialogFooter>
 			</DialogContent>
 		</Dialog>
+	);
+}
+
+// =============================================================================
+// CouncilResultReadonly — cached council result for non-pending trades
+// =============================================================================
+
+const AGENT_ACCENT: Record<string, { name: string; dot: string; border: string; bg: string }> = {
+	bull: {
+		name: "#34d399",
+		dot: "#34d399",
+		border: "rgba(52,211,153,0.2)",
+		bg: "rgba(52,211,153,0.05)",
+	},
+	bear: {
+		name: "#fbbf24",
+		dot: "#fbbf24",
+		border: "rgba(251,191,36,0.2)",
+		bg: "rgba(251,191,36,0.05)",
+	},
+	quant: {
+		name: "#38bdf8",
+		dot: "#38bdf8",
+		border: "rgba(56,189,248,0.2)",
+		bg: "rgba(56,189,248,0.05)",
+	},
+};
+
+function agentAccent(id: string) {
+	return (
+		AGENT_ACCENT[id] ?? {
+			name: "#a78bfa",
+			dot: "#a78bfa",
+			border: "rgba(167,139,250,0.2)",
+			bg: "rgba(167,139,250,0.05)",
+		}
+	);
+}
+
+function CouncilResultReadonly({ intent }: { intent: Intent }) {
+	const councilResult = (intent.details as { councilResult?: unknown })
+		.councilResult as
+		| {
+				approved: boolean;
+				ratio: number;
+				totalFor: number;
+				totalAgainst: number;
+				totalAbstain: number;
+				agents: Array<{
+					agentId: string;
+					agentName: string;
+					role: string;
+					avatar: string;
+					rounds: string[];
+					vote: string;
+				}>;
+		  }
+		| undefined;
+
+	if (!councilResult) {
+		return (
+			<div className="flex-1 flex items-center justify-center text-[12px] font-mono" style={{ color: "#333" }}>
+				No council record
+			</div>
+		);
+	}
+
+	const total =
+		councilResult.totalFor + councilResult.totalAgainst + councilResult.totalAbstain;
+	const pct = Math.round(councilResult.ratio * 100);
+
+	return (
+		<div className="flex-1 overflow-y-auto px-20 py-16 flex flex-col gap-16" style={{ scrollbarWidth: "none" }}>
+			<span className="text-[10px] font-mono uppercase tracking-[0.15em]" style={{ color: "#4a4a55" }}>
+				Council · Archived Record
+			</span>
+
+			{councilResult.agents.map((agent) => {
+				const accent = agentAccent(agent.agentId);
+				return (
+					<div key={agent.agentId} className="flex flex-col gap-8">
+						<div className="flex items-center gap-8">
+							<span className="size-[6px] rounded-full flex-shrink-0" style={{ background: accent.dot }} />
+							<span className="text-[11px] font-semibold font-mono uppercase tracking-wide" style={{ color: accent.name }}>
+								{agent.avatar} {agent.agentName}
+							</span>
+							<span className="text-[10px] font-mono" style={{ color: "#4a4a55" }}>
+								{agent.role}
+							</span>
+							{agent.vote === "FOR" && (
+								<span className="text-[9px] font-mono font-semibold tracking-widest px-6 py-1 rounded-full" style={{ color: "#34d399", border: "1px solid rgba(52,211,153,0.3)", background: "rgba(52,211,153,0.08)" }}>
+									FOR
+								</span>
+							)}
+							{agent.vote === "AGAINST" && (
+								<span className="text-[9px] font-mono font-semibold tracking-widest px-6 py-1 rounded-full" style={{ color: "#f87171", border: "1px solid rgba(248,113,113,0.3)", background: "rgba(248,113,113,0.08)" }}>
+									AGAINST
+								</span>
+							)}
+						</div>
+						{agent.rounds.map((content, idx) => (
+							<div
+								key={idx}
+								className="ml-14 rounded-xl px-14 py-10 border-l-2"
+								style={{ background: accent.bg, border: `1px solid ${accent.border}`, borderLeft: `2px solid ${accent.dot}` }}
+							>
+								<p className="text-[12px] leading-[1.75] font-mono whitespace-pre-wrap" style={{ color: "rgba(255,255,255,0.7)" }}>
+									{content.replace(/\n*VOTE:\s*(FOR|AGAINST)\b.*/i, "").trim()}
+								</p>
+							</div>
+						))}
+					</div>
+				);
+			})}
+
+			{/* Verdict */}
+			<div
+				className="rounded-xl px-16 py-12 flex items-center gap-12"
+				style={
+					councilResult.approved
+						? { background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)" }
+						: { background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)" }
+				}
+			>
+				<span className="text-xl" style={{ color: councilResult.approved ? "#34d399" : "#f87171" }}>
+					{councilResult.approved ? "✓" : "✗"}
+				</span>
+				<div className="flex flex-col gap-1">
+					<span className="text-[13px] font-semibold tracking-wide" style={{ color: councilResult.approved ? "#34d399" : "#f87171" }}>
+						{councilResult.approved ? "TRADE APPROVED" : "TRADE REJECTED"}
+					</span>
+					<span className="text-[11px] font-mono" style={{ color: "#4a4a55" }}>
+						{councilResult.totalFor}/{total} FOR · {pct}% approval
+					</span>
+				</div>
+			</div>
+		</div>
 	);
 }

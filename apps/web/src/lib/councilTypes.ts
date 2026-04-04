@@ -30,6 +30,7 @@ export interface CouncilState {
     totalFor: number;
     totalAgainst: number;
     totalAbstain: number;
+    summary?: string;
   };
   error?: string;
 }

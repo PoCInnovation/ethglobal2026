@@ -248,6 +248,33 @@ export async function runCouncilDeliberation(
 
   console.log(`[council/orchestrator] Result: approved=${approved} FOR=${totalFor} AGAINST=${totalAgainst} ABSTAIN=${totalAbstain}`);
 
+  // 5. Generate one-line summary
+  let summary = "";
+  try {
+    const allMessages = agentResults
+      .map((a) => `${a.agentName} (voted ${a.vote}): ${a.rounds[a.rounds.length - 1] ?? ""}`)
+      .join("\n\n");
+
+    const verdict = approved ? "APPROVED" : "REJECTED";
+
+    const summaryResponse = await geminiClient.models.generateContent({
+      model: COUNCIL_MODEL,
+      contents: [
+        `A trading council just ${verdict} this trade on "${market.marketTitle}" (outcome: ${market.outcome}, price: ${market.outcomePrice ?? "?"}).`,
+        ``,
+        `Here are the agents' final arguments:`,
+        allMessages,
+        ``,
+        `Explain in 1-2 sentences WHY the council ${verdict} the trade. Be specific: mention the concrete reasons (e.g. "price too high", "no edge", "liquidity risk", "positive EV"). Write as if talking to the trader. No preamble.`,
+      ].join("\n"),
+      config: { maxOutputTokens: 120 },
+    });
+    summary = (summaryResponse.text ?? "").trim();
+    console.log(`[council/orchestrator] Summary: ${summary}`);
+  } catch (err) {
+    console.warn(`[council/orchestrator] Summary generation failed:`, err);
+  }
+
   const votes: Record<string, AgentVote> = {};
   for (const a of agentResults) votes[a.agentId] = a.vote;
 
@@ -260,6 +287,7 @@ export async function runCouncilDeliberation(
     totalAbstain,
     agents: agentResults,
     deliberatedAt: new Date().toISOString(),
+    summary: summary || undefined,
   };
 
   emit({ type: "council_result", payload: result as unknown as Record<string, unknown> });

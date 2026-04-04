@@ -42,4 +42,5 @@ export interface CouncilResult {
   totalAbstain: number;
   agents: AgentDeliberationResult[];
   deliberatedAt: string;             // ISO timestamp
+  summary?: string;                  // One-line human-readable recap
 }

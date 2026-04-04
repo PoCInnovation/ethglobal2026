@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import { useCouncilDeliberation } from "@/hooks/useCouncilDeliberation";
-import type { AgentState, AgentVote } from "@/lib/councilTypes";
+import type { AgentState, AgentVote, CouncilState } from "@/lib/councilTypes";
 import { Spinner } from "@/components/ui/Spinner";
-import { Tag, Button } from "@ledgerhq/lumen-ui-react";
+import { Button } from "@ledgerhq/lumen-ui-react";
 
 // =============================================================================
 // Types
@@ -14,232 +14,308 @@ interface CouncilDeliberationProps {
 }
 
 // =============================================================================
-// AgentCard (sub-component)
+// Minimal agent accent — just a thin left-bar color
 // =============================================================================
 
-function AgentCard({ agent }: { agent: AgentState }) {
-  // Group messages by round
-  const rounds = agent.messages.reduce<Record<number, string[]>>((acc, msg) => {
-    if (!acc[msg.round]) acc[msg.round] = [];
-    acc[msg.round]!.push(msg.content);
-    return acc;
-  }, {});
+const AGENT_STYLE: Record<string, { bar: string; name: string }> = {
+  bull: { bar: "#6ee7b7", name: "#6ee7b7" },   // green
+  bear: { bar: "#fbbf24", name: "#fbbf24" },   // amber
+  quant: { bar: "#7dd3fc", name: "#7dd3fc" },  // sky
+};
 
-  const roundNumbers = Object.keys(rounds)
-    .map(Number)
-    .sort((a, b) => a - b);
+function agentStyle(id: string) {
+  return AGENT_STYLE[id] ?? { bar: "#a78bfa", name: "#a78bfa" };
+}
 
-  const voteAppearance: Record<AgentVote, "success" | "error" | "gray"> = {
-    FOR: "success",
-    AGAINST: "error",
-    ABSTAIN: "gray",
-  };
+// =============================================================================
+// Vote tag — tiny, monochrome
+// =============================================================================
 
-  const voteLabel: Record<AgentVote, string> = {
-    FOR: "FOR",
-    AGAINST: "AGAINST",
-    ABSTAIN: "ABSTAIN",
-  };
+function VoteTag({ vote }: { vote: AgentVote }) {
+  if (vote === "FOR") {
+    return (
+      <span className="text-[10px] font-mono tracking-wider" style={{ color: "#6ee7b7" }}>
+        FOR
+      </span>
+    );
+  }
+  if (vote === "AGAINST") {
+    return (
+      <span className="text-[10px] font-mono tracking-wider" style={{ color: "#fca5a5" }}>
+        AGAINST
+      </span>
+    );
+  }
+  return (
+    <span className="text-[10px] font-mono tracking-wider" style={{ color: "#555" }}>
+      ABSTAIN
+    </span>
+  );
+}
+
+// =============================================================================
+// Single agent message block
+// =============================================================================
+
+function MessageBlock({
+  agent,
+  content,
+  isStreaming,
+}: {
+  agent: AgentState;
+  content: string;
+  isStreaming?: boolean;
+}) {
+  const text = content.replace(/\n*VOTE:\s*(FOR|AGAINST)\b.*/i, "").trim();
+  const voteMatch = content.match(/VOTE:\s*(FOR|AGAINST)\b/i);
+  const vote = voteMatch?.[1] ? (voteMatch[1].toUpperCase() as AgentVote) : null;
+
+  const style = agentStyle(agent.id);
 
   return (
-    <div className="rounded-lg bg-muted-transparent p-16 flex flex-col gap-12">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-8">
-          <span className="text-[1.25rem] leading-none">{agent.avatar}</span>
-          <span className="body-2-semi-bold text-base">
-            {agent.name}
-          </span>
-          <span className="body-3 text-muted">&mdash; {agent.role}</span>
-        </div>
-        {agent.vote && (
-          <Tag
-            appearance={voteAppearance[agent.vote]}
-            size="sm"
-            label={voteLabel[agent.vote]}
-          />
+    <div
+      className="pl-12 border-l-2"
+      style={{ borderColor: style.bar }}
+    >
+      {/* Name + vote */}
+      <div className="flex items-baseline gap-8 mb-4">
+        <span className="text-[12px] font-semibold" style={{ color: style.name }}>
+          {agent.avatar} {agent.name}
+        </span>
+        <span className="text-[10px] text-white/25">
+          {agent.role}
+        </span>
+        {vote && !isStreaming && (
+          <>
+            <span style={{ color: "#2a2a2a" }}>·</span>
+            <VoteTag vote={vote} />
+          </>
         )}
       </div>
 
-      {/* Messages by round */}
-      {roundNumbers.map((round, idx) => (
-        <div key={round} className="flex flex-col gap-8">
-          {idx > 0 && (
-            <div className="border-t border-dashed border-muted-subtle" />
+      {/* Body */}
+      {(text || isStreaming) ? (
+        <p className="text-[12.5px] leading-[1.75] text-white/60 whitespace-pre-wrap">
+          {text}
+          {isStreaming && (
+            <span
+              className="inline-block w-px h-[0.85em] ml-[2px] align-text-bottom animate-pulse"
+              style={{ background: "rgba(255,255,255,0.4)" }}
+            />
           )}
-          <span className="body-3 text-muted">Round {round}</span>
-          {rounds[round]!.map((content, i) => (
-            <p key={i} className="body-2 text-base whitespace-pre-wrap">
-              {content}
-            </p>
-          ))}
-        </div>
-      ))}
-
-      {/* Streaming content */}
-      {agent.status === "thinking" && agent.currentStreamContent && (
-        <div className="flex flex-col gap-8">
-          {roundNumbers.length > 0 && (
-            <div className="border-t border-dashed border-muted-subtle" />
-          )}
-          <p className="body-2 text-base whitespace-pre-wrap">
-            {agent.currentStreamContent}
-            <span className="inline-block w-[2px] h-[1em] bg-current ml-[2px] align-text-bottom animate-blink" />
-          </p>
-        </div>
-      )}
-
-      {/* Thinking (no stream content yet) */}
-      {agent.status === "thinking" && !agent.currentStreamContent && (
-        <div className="flex items-center gap-4">
-          <span className="body-2 text-muted animate-pulse">
-            &#9679; &#9679; &#9679;
-          </span>
-        </div>
-      )}
-
-      {/* Waiting */}
-      {agent.status === "waiting" && (
-        <span className="body-3 text-muted italic">(waiting...)</span>
-      )}
-
-      {/* Error */}
-      {agent.status === "error" && (
-        <span className="body-3 text-error">Agent encountered an error</span>
+        </p>
+      ) : (
+        <span className="text-[11px]" style={{ color: "#2a2a2a" }}>…</span>
       )}
     </div>
   );
 }
 
 // =============================================================================
-// ResultBanner
+// Build ordered message list
 // =============================================================================
 
-function ResultBanner({
-  result,
-}: {
-  result: {
-    approved: boolean;
-    ratio: number;
-    totalFor: number;
-    totalAgainst: number;
-    totalAbstain: number;
-  };
-}) {
-  const total = result.totalFor + result.totalAgainst + result.totalAbstain;
-  const pct = Math.round(result.ratio * 100);
+function buildMessages(state: CouncilState) {
+  const out: Array<{
+    key: string;
+    agent: AgentState;
+    round: number;
+    content: string;
+    streaming: boolean;
+  }> = [];
 
-  if (result.approved) {
-    return (
-      <div className="rounded-lg bg-success/10 p-16 text-center">
-        <span className="body-1-semi-bold text-success">
-          TRADE APPROVED &mdash; {result.totalFor}/{total} voted FOR ({pct}%)
-        </span>
-      </div>
-    );
+  const maxRound = Math.max(
+    state.currentRound ?? 1,
+    ...state.agents.flatMap((a) => a.messages.map((m) => m.round)),
+    1,
+  );
+
+  for (let r = 1; r <= maxRound; r++) {
+    for (const agent of state.agents) {
+      const msg = agent.messages.find((m) => m.round === r);
+      if (msg) {
+        out.push({ key: `${agent.id}-${r}`, agent, round: r, content: msg.content, streaming: false });
+      } else if (agent.status === "thinking" && (state.currentRound ?? 1) === r) {
+        out.push({ key: `${agent.id}-${r}-s`, agent, round: r, content: agent.currentStreamContent, streaming: true });
+      }
+    }
   }
+  return out;
+}
+
+// =============================================================================
+// Summary bar — pinned at the bottom of the chat panel
+// =============================================================================
+
+function SummaryBar({ state }: { state: CouncilState }) {
+  const isDone = state.phase === "complete" || state.phase === "cached";
+  const isActive = state.phase === "deliberating" || state.phase === "voting" || state.phase === "connecting";
+
+  if (state.phase === "idle" || state.phase === "error") return null;
 
   return (
-    <div className="rounded-lg bg-error/10 p-16 text-center">
-      <span className="body-1-semi-bold text-error">
-        TRADE REJECTED &mdash; {result.totalFor}/{total} voted FOR ({pct}%)
+    <div className="flex-shrink-0 flex items-center justify-center px-12 py-12" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+      <div
+        className="w-[96%] h-[60px] rounded-xl flex items-center justify-center px-20 gap-10"
+        style={{ background: "#ffffff" }}
+      >
+        {isActive && !isDone && (
+          <>
+            <span className="size-[5px] rounded-full bg-black/30 animate-pulse flex-shrink-0" />
+            <span className="text-[14px] font-medium text-black/50">
+              Deliberation in progress…
+            </span>
+          </>
+        )}
+        {isDone && (
+          <span className="text-[14px] font-medium text-black text-center leading-snug">
+            {state.result?.summary ?? (state.result?.approved ? "Trade approved by council." : "Trade rejected by council.")}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// Verdict
+// =============================================================================
+
+function Verdict({ result }: {
+  result: { approved: boolean; ratio: number; totalFor: number; totalAgainst: number; totalAbstain: number };
+}) {
+  const total = result.totalFor + result.totalAgainst + result.totalAbstain;
+  return (
+    <div
+      className="flex items-baseline gap-8 pt-12 mt-4 border-t"
+      style={{ borderColor: "rgba(255,255,255,0.06)" }}
+    >
+      <span
+        className="text-[12px] font-medium"
+        style={{ color: result.approved ? "#6ee7b7" : "#fca5a5" }}
+      >
+        {result.approved ? "Approved" : "Rejected"}
+      </span>
+      <span className="text-[11px]" style={{ color: "#444" }}>
+        {result.totalFor}/{total} for · {Math.round(result.ratio * 100)}%
       </span>
     </div>
   );
 }
 
 // =============================================================================
-// CouncilDeliberation (main component)
+// Main feed
 // =============================================================================
 
-export function CouncilDeliberation({
-  intentId,
-  onComplete,
-}: CouncilDeliberationProps) {
+function Feed({ state, onRetry }: { state: CouncilState; onRetry: () => void }) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  });
+
+  if (state.phase === "idle" || state.phase === "connecting") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-10">
+        <Spinner size="sm" />
+        <span className="text-[11px] text-white/20">Connecting…</span>
+      </div>
+    );
+  }
+
+  if (state.phase === "error") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-10">
+        <span className="text-[12px] text-white/40">{state.error ?? "Connection error"}</span>
+        <Button size="sm" onClick={onRetry}>Retry</Button>
+      </div>
+    );
+  }
+
+  const msgs = buildMessages(state);
+  const rounds = [...new Set(msgs.map((m) => m.round))].sort((a, b) => a - b);
+  const isLive = state.phase === "deliberating" || state.phase === "voting";
+  const isDone = state.phase === "complete" || state.phase === "cached";
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Scrollable chat area */}
+      <div
+        className="flex-1 overflow-y-auto flex flex-col gap-0 px-20 py-16 min-h-0"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {/* Topline */}
+        <div className="flex items-center gap-8 mb-16">
+          <span className="text-[10px] text-white/20 uppercase tracking-[0.15em]">
+            Council
+          </span>
+          {isLive && (
+            <>
+              <span className="size-[4px] rounded-full bg-white/30 animate-pulse" />
+              <span className="text-[10px] text-white/30">live</span>
+            </>
+          )}
+        </div>
+
+        {/* Rounds */}
+        {rounds.map((round, ri) => (
+          <div key={round} className="flex flex-col gap-14">
+            {ri > 0 && (
+              <div
+                className="h-px my-10"
+                style={{ background: "rgba(255,255,255,0.04)" }}
+              />
+            )}
+            <span className="text-[9px] text-white/15 uppercase tracking-[0.2em] mb-2">
+              Round {round}
+            </span>
+            {msgs
+              .filter((m) => m.round === round)
+              .map((m) => (
+                <MessageBlock
+                  key={m.key}
+                  agent={m.agent}
+                  content={m.content}
+                  isStreaming={m.streaming}
+                />
+              ))}
+          </div>
+        ))}
+
+        {/* Verdict */}
+        {state.result && isDone && <Verdict result={state.result} />}
+
+        <div ref={bottomRef} />
+      </div>
+
+      {/* ── Bottom summary bar ── */}
+      <SummaryBar state={state} />
+    </div>
+  );
+}
+
+// =============================================================================
+// Export
+// =============================================================================
+
+export function CouncilDeliberation({ intentId, onComplete }: CouncilDeliberationProps) {
   const { state, start } = useCouncilDeliberation(intentId);
   const startedRef = useRef(false);
   const completedRef = useRef(false);
 
-  // Auto-start once — guard against React Strict Mode double-invoke
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
     start();
   }, [start]);
 
-  // Notify parent when result arrives — fire once only
   useEffect(() => {
     if (completedRef.current) return;
     if (state.result && (state.phase === "complete" || state.phase === "cached")) {
       completedRef.current = true;
-      onComplete({
-        approved: state.result.approved,
-        ratio: state.result.ratio,
-      });
+      onComplete({ approved: state.result.approved, ratio: state.result.ratio });
     }
   }, [state.phase, state.result, onComplete]);
 
-  // ---- idle / connecting ----
-  if (state.phase === "idle" || state.phase === "connecting") {
-    return (
-      <div className="flex flex-col gap-16">
-        <Header />
-        <div className="flex items-center justify-center gap-8 py-32">
-          <Spinner size="sm" />
-          <span className="body-2 text-muted">Connecting to council...</span>
-        </div>
-      </div>
-    );
-  }
-
-  // ---- error ----
-  if (state.phase === "error") {
-    return (
-      <div className="flex flex-col gap-16">
-        <Header />
-        <div className="rounded-lg bg-error/10 p-16 flex flex-col items-center gap-12">
-          <span className="body-2 text-error">
-            {state.error || "An error occurred during deliberation."}
-          </span>
-          <Button size="sm" onClick={() => start()}>
-            Retry
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // ---- deliberating / voting / complete / cached ----
-  return (
-    <div className="flex flex-col gap-16">
-      <Header />
-
-      <div className="flex flex-col gap-12">
-        {state.agents.map((agent) => (
-          <AgentCard key={agent.id} agent={agent} />
-        ))}
-      </div>
-
-      {state.result && (state.phase === "complete" || state.phase === "cached") && (
-        <ResultBanner result={state.result} />
-      )}
-    </div>
-  );
-}
-
-// =============================================================================
-// Header
-// =============================================================================
-
-function Header() {
-  return (
-    <div className="flex flex-col gap-4">
-      <span className="heading-3-semi-bold text-base">
-        AI Council Deliberation
-      </span>
-      <span className="body-3 text-muted">
-        &ldquo;Should we take this position?&rdquo;
-      </span>
-    </div>
-  );
+  return <Feed state={state} onRetry={start} />;
 }

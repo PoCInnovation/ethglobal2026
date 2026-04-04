@@ -91,6 +91,7 @@ export function useCouncilDeliberation(intentId: string | null) {
                 totalFor: data.payload.totalFor,
                 totalAgainst: data.payload.totalAgainst,
                 totalAbstain: data.payload.totalAbstain,
+                summary: data.payload.summary,
               },
             };
 
@@ -117,6 +118,7 @@ export function useCouncilDeliberation(intentId: string | null) {
                 totalFor: data.payload.totalFor,
                 totalAgainst: data.payload.totalAgainst,
                 totalAbstain: data.payload.totalAbstain,
+                summary: data.payload.summary,
               },
             };
 
