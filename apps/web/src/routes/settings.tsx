@@ -8,6 +8,7 @@ import {
 	generateAgentKeyPair,
 } from "@/lib/agent-keys";
 import { useLedger } from "@/lib/ledger-provider";
+import { usePolymarketAuth } from "@/lib/polymarket-auth";
 import { cn, formatAddress, formatTimeAgo } from "@/lib/utils";
 import { agentsQueryOptions, useRegisterAgent, useRevokeAgent } from "@/queries/agents";
 import type { TrustchainMember } from "@agent-intents/shared";
@@ -116,8 +117,69 @@ function SettingsPage() {
 				</div>
 			</div>
 
+			{/* Polymarket Connection */}
+			<PolymarketConnectionSection />
+
 			{/* Agent Management */}
 			<AgentManagementSection />
+		</div>
+	);
+}
+
+// =============================================================================
+// Polymarket Connection Section
+// =============================================================================
+
+function PolymarketConnectionSection() {
+	const { isConnected } = useLedger();
+	const { isPolyConnected, isLoading, error, connect, disconnect } = usePolymarketAuth();
+
+	return (
+		<div className="flex flex-col gap-16">
+			<div className="rounded-lg bg-surface p-24">
+				<div className="flex flex-col gap-16">
+					<div className="flex items-center justify-between">
+						<div className="flex flex-col gap-4">
+							<h2 className="heading-5-semi-bold text-base">Polymarket</h2>
+							<p className="body-2 text-muted">
+								Connect your wallet to the Polymarket CLOB API to enable order placement
+							</p>
+						</div>
+						{isPolyConnected ? (
+							<Tag appearance="success" size="sm" label="Connected" />
+						) : (
+							<Tag appearance="gray" size="sm" label="Not connected" />
+						)}
+					</div>
+
+					{error && (
+						<div className="rounded-sm bg-error-strong/25 px-12 py-8">
+							<p className="body-3 text-error">{error}</p>
+						</div>
+					)}
+
+					<div className="flex gap-12">
+						{!isPolyConnected ? (
+							<Button
+								appearance="accent"
+								size="md"
+								onClick={connect}
+								disabled={!isConnected || isLoading}
+							>
+								{isLoading ? "Signing on Ledger..." : "Connect to Polymarket"}
+							</Button>
+						) : (
+							<Button appearance="gray" size="md" onClick={disconnect}>
+								Disconnect
+							</Button>
+						)}
+					</div>
+
+					{!isConnected && (
+						<p className="body-3 text-muted">Connect your Ledger first to enable Polymarket</p>
+					)}
+				</div>
+			</div>
 		</div>
 	);
 }

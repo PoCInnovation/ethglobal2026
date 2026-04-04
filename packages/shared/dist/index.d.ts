@@ -116,6 +116,11 @@ export interface PolymarketTradeDetails {
     outcome: "Yes" | "No";
     amount: string;
     outcomePrice?: number;
+    tokenId?: string;
+    outcomeTokenIds?: {
+        yes: string;
+        no: string;
+    };
     chainId: 137;
     memo?: string;
 }

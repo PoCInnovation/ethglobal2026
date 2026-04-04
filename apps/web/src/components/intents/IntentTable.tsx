@@ -11,6 +11,7 @@ import {
 import { useUpdateIntentStatus } from "@/queries/intents";
 import {
 	type Intent,
+	type PolymarketTradeDetails,
 	type TransferIntent,
 	SUPPORTED_CHAINS,
 	SUPPORTED_TOKENS,
@@ -20,6 +21,7 @@ import {
 	isTransferIntent,
 } from "@agent-intents/shared";
 import { buildPolymarketTx } from "@/lib/polymarket";
+import { buildOrderFromIntent } from "@/lib/polymarket-order";
 import { Button } from "@ledgerhq/lumen-ui-react";
 import { useState } from "react";
 import { verifyTypedData } from "viem";
@@ -302,27 +304,29 @@ function IntentRow({ intent, onSelectIntent }: IntentRowProps) {
 	const handleSign = async () => {
 		setError(null);
 
-		// Polymarket path: build PolyProxy tx and send
+		// Polymarket path: build EIP-712 order, sign on Ledger
 		if (isPolymarket) {
 			if (!account) {
 				setError("Connect your Ledger to sign");
 				return;
 			}
-			if (isWrongChain) {
-				setError(`Switch to ${chain?.name ?? "Polygon"} to sign`);
+			const polyDetails = details as PolymarketTradeDetails;
+			if (!polyDetails.tokenId) {
+				setError("Market data not enriched (missing tokenId)");
 				return;
 			}
 			setIsSigning(true);
 			try {
-				const tx = buildPolymarketTx(details);
-				const txHash = await sendTransaction(tx);
+				const order = buildOrderFromIntent(polyDetails, account);
+				const signature = await signTypedDataV4(order);
+				console.log("[Polymarket] Signed order:", { order: order.message, signature });
 				await updateStatus.mutateAsync({
 					id: intent.id,
-					status: "broadcasting",
-					txHash,
+					status: "authorized",
+					note: `Polymarket order signed (signature: ${signature.slice(0, 18)}...)`,
 				});
 			} catch (err) {
-				const msg = err instanceof Error ? err.message : "Transaction failed";
+				const msg = err instanceof Error ? err.message : "Signing failed";
 				const lower = msg.toLowerCase();
 				const rejected =
 					lower.includes("reject") || lower.includes("cancel") || lower.includes("denied") || lower.includes("user") || lower.includes("abort");

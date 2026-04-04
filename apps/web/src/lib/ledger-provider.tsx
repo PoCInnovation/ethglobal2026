@@ -39,7 +39,7 @@ import {
 	createPublicClient,
 	serializeTransaction,
 } from "viem";
-import { base, baseSepolia, sepolia } from "viem/chains";
+import { base, baseSepolia, polygon, sepolia } from "viem/chains";
 import {
 	isPolymarketOrder,
 	buildPolymarketContext,
@@ -169,16 +169,17 @@ function isWebBluetoothAvailable(): boolean {
 // =============================================================================
 
 const CHAIN_MAP: Record<number, Chain> = {
+	137: polygon,
 	8453: base,
 	84532: baseSepolia,
 	11155111: sepolia,
 };
 
-// Default chain: Base mainnet
-const DEFAULT_CHAIN_ID = 8453;
+// Default chain: Polygon (for Polymarket)
+const DEFAULT_CHAIN_ID = 137;
 
 function getChain(chainId: number): Chain {
-	return CHAIN_MAP[chainId] ?? base;
+	return CHAIN_MAP[chainId] ?? polygon;
 }
 
 function getRpcUrl(chainId: number): string {
