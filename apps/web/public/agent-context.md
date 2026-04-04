@@ -81,7 +81,7 @@ Share the `paymentUrl` with the human so they can review and sign the transactio
 
 **`GET https://www.agentintents.io/api/intents/<intent-id>`**
 
-Poll until `status` is one of the terminal states: `confirmed`, `rejected`, `failed`, or `expired`.
+Poll until `status` is one of the terminal states: `authorized` (Polymarket order signed), `confirmed`, `rejected`, `failed`, or `expired`.
 
 ---
 
@@ -146,7 +146,7 @@ Use the `conditionId` from the search result to create a Polymarket trade intent
 | `chainId`     | number | Yes      | Must be `137` (Polygon)                                  |
 | `memo`        | string | No       | Agent's justification for the trade (shown to the human) |
 
-The backend automatically enriches the intent with the market title (`marketTitle`) and current outcome price (`outcomePrice`) from the Polymarket Gamma API.
+The backend automatically enriches the intent with the market title (`marketTitle`), current outcome price (`outcomePrice`), and CLOB token ID (`tokenId`) from the Polymarket CLOB API (with Gamma API fallback).
 
 ### Response (`201 Created`)
 
@@ -277,11 +277,12 @@ echo ""
 echo "Share this link with the human to review and sign: $PAYMENT_URL"
 
 # ── 5. Poll for completion ──────────────────────────────────────
+# For polymarket_trade, "authorized" = user signed the order on Ledger.
 INTENT_ID=$(echo "$RESPONSE" | jq -r '.intent.id')
 STATUS="pending"
 
 for i in $(seq 1 120); do
-  case "$STATUS" in confirmed|rejected|failed|expired) break ;; esac
+  case "$STATUS" in authorized|confirmed|rejected|failed|expired) break ;; esac
   sleep 30
   POLL_TS=$(date +%s)
   POLL_SIG=$(cast wallet sign --private-key "$PRIVATE_KEY" "${POLL_TS}.0x")

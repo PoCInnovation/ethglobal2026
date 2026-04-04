@@ -102,7 +102,7 @@
 			"Content-Type": "application/json",
 			"Authorization": "AgentAuth <timestamp>.<bodyHash>.<signature>"
 		},
-		"description": "Create a Polymarket trade intent. The backend enriches it with marketTitle and outcomePrice from the Gamma API.",
+		"description": "Create a Polymarket trade intent. The backend enriches it with marketTitle, outcomePrice, and tokenId from the Polymarket CLOB API.",
 		"body": {
 			"agentId": "my-agent",
 			"agentName": "My Agent",
@@ -139,6 +139,7 @@
 					"outcome": "Yes",
 					"amount": "50",
 					"outcomePrice": 0.65,
+					"tokenId": "12345678901234567890...",
 					"chainId": 137,
 					"memo": "Agent's justification for the trade"
 				},
@@ -159,8 +160,8 @@
 		"headers": {
 			"Authorization": "AgentAuth <timestamp>.0x.<signature>"
 		},
-		"terminalStatuses": ["confirmed", "rejected", "failed", "expired"],
-		"description": "Poll until status is one of the terminal states. Works for both transfer and polymarket_trade intents."
+		"terminalStatuses": ["authorized", "confirmed", "rejected", "failed", "expired"],
+		"description": "Poll until status is one of the terminal states. For polymarket_trade intents, 'authorized' means the user signed the order. For transfer intents, 'confirmed' means on-chain confirmation."
 	},
 	"supportedChains": [
 		{ "chainId": 8453, "name": "Base", "token": "USDC", "notes": "Mainnet" },
