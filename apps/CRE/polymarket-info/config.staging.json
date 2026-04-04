@@ -1,0 +1,5 @@
+{
+  "oracleAddress": "0x0000000000000000000000000000000000000001",
+  "chainSelectorName": "ethereum-testnet-sepolia",
+  "gasLimit": "500000"
+}
