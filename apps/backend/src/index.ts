@@ -32,8 +32,44 @@ app.use(
 );
 app.use(express.json());
 
+// Cookie parser (lightweight, no dependency)
+function parseCookies(header: string | undefined): Record<string, string> {
+	if (!header) return {};
+	const out: Record<string, string> = {};
+	for (const pair of header.split(";")) {
+		const [k, ...v] = pair.split("=");
+		if (k) out[k.trim()] = decodeURIComponent(v.join("=").trim());
+	}
+	return out;
+}
+
 // In-memory stores (replace with DB for production)
 const intents = new Map<string, Intent>();
+
+// ============ Auth In-Memory Store ============
+interface AuthChallenge {
+	id: string;
+	walletAddress: string;
+	nonce: string;
+	message: string;
+	expiresAt: number; // epoch ms
+	usedAt: number | null;
+}
+interface AuthSession {
+	id: string;
+	walletAddress: string;
+	expiresAt: number; // epoch ms
+}
+const authChallenges = new Map<string, AuthChallenge>();
+const authSessions = new Map<string, AuthSession>();
+
+const SESSION_COOKIE_NAME = "ai_session";
+const CHALLENGE_VALIDITY_MS = 5 * 60 * 1000; // 5 minutes
+const SESSION_VALIDITY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function buildWelcomeMessage(nonce: string): string {
+	return `Welcome to agentintents.io\n\nNonce: ${nonce}`;
+}
 
 // ============ Agent / Trustchain In-Memory Store ============
 interface TrustchainMember {
@@ -73,6 +109,102 @@ function createIntent(req: CreateIntentRequest, userId: string): Intent {
 // Health check
 app.get("/health", (_req, res) => {
 	res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// ============ Auth API ============
+
+// POST /api/auth/challenge – issue a personal_sign challenge
+app.post("/api/auth/challenge", (req, res) => {
+	const { walletAddress } = req.body as { walletAddress?: string };
+	if (!walletAddress || !/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+		res.status(400).json({ success: false, error: "Invalid wallet address" });
+		return;
+	}
+	const wallet = walletAddress.toLowerCase();
+	const nonce = uuidv4();
+	const message = buildWelcomeMessage(nonce);
+	const challenge: AuthChallenge = {
+		id: uuidv4(),
+		walletAddress: wallet,
+		nonce,
+		message,
+		expiresAt: Date.now() + CHALLENGE_VALIDITY_MS,
+		usedAt: null,
+	};
+	authChallenges.set(challenge.id, challenge);
+	console.log(`[Auth Challenge] ${wallet} nonce=${nonce}`);
+	res.json({ success: true, nonce, message });
+});
+
+// POST /api/auth/verify – verify signature and create session
+app.post("/api/auth/verify", async (req, res) => {
+	const { walletAddress, nonce, signature } = req.body as {
+		walletAddress?: string;
+		nonce?: string;
+		signature?: string;
+	};
+	if (!walletAddress || !nonce || !signature) {
+		res.status(400).json({ success: false, error: "Missing required fields" });
+		return;
+	}
+	const wallet = walletAddress.toLowerCase();
+
+	// Find matching challenge
+	const challenge = Array.from(authChallenges.values()).find(
+		(c) => c.walletAddress === wallet && c.nonce === nonce && !c.usedAt && c.expiresAt > Date.now(),
+	);
+	if (!challenge) {
+		res.status(401).json({ success: false, error: "Invalid or expired challenge" });
+		return;
+	}
+
+	// Verify signature
+	try {
+		const { recoverMessageAddress } = await import("viem");
+		const recovered = await recoverMessageAddress({
+			message: challenge.message,
+			signature: signature as `0x${string}`,
+		});
+		if (recovered.toLowerCase() !== wallet) {
+			res.status(401).json({ success: false, error: "Signature does not match wallet" });
+			return;
+		}
+	} catch {
+		res.status(401).json({ success: false, error: "Invalid signature" });
+		return;
+	}
+
+	// Mark challenge as used
+	challenge.usedAt = Date.now();
+
+	// Create session
+	const sessionId = uuidv4();
+	const expiresAt = Date.now() + SESSION_VALIDITY_MS;
+	authSessions.set(sessionId, { id: sessionId, walletAddress: wallet, expiresAt });
+
+	const expDate = new Date(expiresAt).toUTCString();
+	res.setHeader(
+		"Set-Cookie",
+		`${SESSION_COOKIE_NAME}=${sessionId}; Path=/; HttpOnly; SameSite=Strict; Expires=${expDate}`,
+	);
+	console.log(`[Auth Session] ${wallet} session=${sessionId}`);
+	res.json({ success: true, walletAddress: wallet });
+});
+
+// GET /api/me – return authenticated wallet from session cookie
+app.get("/api/me", (req, res) => {
+	const cookies = parseCookies(req.headers.cookie);
+	const sessionId = cookies[SESSION_COOKIE_NAME];
+	if (!sessionId) {
+		res.status(401).json({ success: false, error: "Authentication required" });
+		return;
+	}
+	const session = authSessions.get(sessionId);
+	if (!session || session.expiresAt < Date.now()) {
+		res.status(401).json({ success: false, error: "Authentication required" });
+		return;
+	}
+	res.json({ success: true, walletAddress: session.walletAddress });
 });
 
 // ============ Agent API ============
