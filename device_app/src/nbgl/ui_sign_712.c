@@ -8,6 +8,7 @@
 #include "mem_utils.h"
 #include "cmd_get_gating.h"
 #include "features/provide_market_context/market_context.h"
+#include "features/provide_market_context/auth_context.h"
 
 /**
  * @brief Trigger the EIP712 review flow
@@ -21,24 +22,42 @@ static void ui_712_start_review(e_eip712_filtering_mode filtering_mode,
                                 nbgl_operationType_t operationType,
                                 nbgl_choiceCallback_t choiceCallback) {
     bool mcp_active = market_context_is_valid();
+    bool auth_active = auth_context_is_valid();
+    const char *tx_check_str_override = NULL;
 
 #ifdef SCREEN_SIZE_WALLET
     const char *tx_check_str = ui_tx_simulation_finish_str();
-    const char *title_suffix = mcp_active ? " order?" : " typed message?";
+    const char *title_suffix;
+    if (mcp_active) {
+        title_suffix = " order?";
+    } else if (auth_active) {
+        title_suffix = " to Polymarket?";
+        tx_check_str_override = "Connect";
+    } else {
+        title_suffix = " typed message?";
+    }
 #else
     UNUSED(filtering_mode);
     const char *tx_check_str = "Sign";
-    const char *title_suffix = mcp_active ? " order" : " message";
+    const char *title_suffix;
+    if (mcp_active) {
+        title_suffix = " order";
+    } else if (auth_active) {
+        title_suffix = " to Polymarket";
+    } else {
+        title_suffix = " message";
+    }
 #endif
     uint8_t finish_len = 1;  // Initialize lengths to 1 for '\0' character
 
     // Initialize the finish title string
-    finish_len += strlen(tx_check_str);
+    const char *finish_prefix = tx_check_str_override ? tx_check_str_override : tx_check_str;
+    finish_len += strlen(finish_prefix);
     finish_len += strlen(title_suffix);
     if (!ui_buffers_init(0, 0, finish_len)) {
         return;
     }
-    snprintf(g_finishMsg, finish_len, "%s%s", tx_check_str, title_suffix);
+    snprintf(g_finishMsg, finish_len, "%s%s", finish_prefix, title_suffix);
 #ifdef HAVE_TRANSACTION_CHECKS
     set_tx_simulation_warning();
 #endif
@@ -50,17 +69,24 @@ static void ui_712_start_review(e_eip712_filtering_mode filtering_mode,
     } else
 #endif
     {
-        if (N_storage.verbose_eip712 || mcp_active) {
+        if (N_storage.verbose_eip712 || mcp_active || auth_active) {
             // In verbose mode or with MCP context, we allow skipping
             operationType |= SKIPPABLE_OPERATION;
         }
     }
 
-    const char *review_title = mcp_active ? "Review order" : "Review typed message";
+    const char *review_title;
+    if (mcp_active) {
+        review_title = "Review order";
+    } else if (auth_active) {
+        review_title = "Connect to Polymarket";
+    } else {
+        review_title = "Review typed message";
+    }
 
     nbgl_useCaseAdvancedReview(operationType,
                                g_pairsList,
-                               mcp_active ? get_app_icon(false) : &ICON_APP_REVIEW,
+                               (mcp_active || auth_active) ? get_app_icon(false) : &ICON_APP_REVIEW,
                                review_title,
                                NULL,
                                g_finishMsg,
