@@ -72,13 +72,13 @@ export function listDeliberations(): CouncilDeliberation[] {
 // Agent system prompts
 // ---------------------------------------------------------------------------
 
-const AGENT_LABELS: Record<AgentRole, string> = {
+export const AGENT_LABELS: Record<AgentRole, string> = {
 	analyst: "📊 Analyst",
 	riskManager: "🛡️ Risk Manager",
 	contrarian: "🔥 Contrarian",
 };
 
-const SYSTEM_PROMPTS: Record<AgentRole, string> = {
+export const SYSTEM_PROMPTS: Record<AgentRole, string> = {
 	analyst: `You are the **Analyst** on a prediction market trading council. Your role:
 - Evaluate market probabilities using fundamental analysis
 - Identify value bets where market price diverges from true probability
