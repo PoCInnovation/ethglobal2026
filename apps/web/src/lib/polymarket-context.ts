@@ -165,6 +165,7 @@ export async function fetchSignedMCPPayload(
         marketAmount: (info as PolymarketMarketInfo).marketAmount,
         marketShares: (info as PolymarketMarketInfo).marketShares,
         marketPrice: (info as PolymarketMarketInfo).marketPrice,
+        marketSide: (info as PolymarketMarketInfo).side === 0 ? "Buy" : "Sell",
       };
 
   const res = await fetch(`${API_BASE}/api/market-context/sign`, {

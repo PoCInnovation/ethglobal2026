@@ -148,17 +148,18 @@ export function IntentDetailDialog({
 									className="px-16 py-14 border-t flex flex-col gap-8"
 									style={{ borderColor: "rgba(255,255,255,0.07)" }}
 								>
-									{isPending && !councilDone ? (
-										<div className="flex items-center justify-center gap-6 py-6">
+									{isPending && !councilDone && (
+										<div className="flex items-center justify-center gap-6 py-4">
 											<span
 												className="size-[5px] rounded-full animate-pulse"
 												style={{ background: "#4a90d9" }}
 											/>
 											<span className="text-[11px] font-mono" style={{ color: "#4a4a55" }}>
-												Awaiting council…
+												Council deliberating…
 											</span>
 										</div>
-									) : (
+									)}
+									{isPending && (
 										<IntentDetailContent.Actions intent={intent} onClose={handleClose} />
 									)}
 								</div>
