@@ -188,7 +188,7 @@ app.post("/api/auth/verify", async (req, res) => {
 	const expDate = new Date(expiresAt).toUTCString();
 	res.setHeader(
 		"Set-Cookie",
-		`${SESSION_COOKIE_NAME}=${sessionId}; Path=/; HttpOnly; SameSite=Strict; Expires=${expDate}`,
+		`${SESSION_COOKIE_NAME}=${sessionId}; Path=/; HttpOnly; Expires=${expDate}`,
 	);
 	console.log(`[Auth Session] ${wallet} session=${sessionId}`);
 	res.json({ success: true, walletAddress: wallet });
@@ -576,6 +576,8 @@ const MCP_TAG = {
 	MARKET_AMOUNT: 0x66,
 	MARKET_SHARES: 0x67,
 	MARKET_PRICE: 0x68,
+	AUTH_LABEL: 0x70,
+	AUTH_ADDRESS: 0x71,
 	DER_SIGNATURE: 0x15,
 } as const;
 
@@ -608,51 +610,88 @@ try {
 }
 
 app.post("/api/market-context/sign", (req, res) => {
-	const { tokenId, chainId, marketName, marketOutcome, marketAmount, marketShares, marketPrice } =
-		req.body;
-	if (
-		!tokenId ||
-		!chainId ||
-		!marketName ||
-		!marketOutcome ||
-		!marketAmount ||
-		!marketShares ||
-		!marketPrice
-	) {
-		res.status(400).json({ error: "Missing required fields" });
-		return;
-	}
-
 	if (!mcpPrivKeyPem) {
 		res.status(500).json({ error: "Attester key not configured" });
 		return;
 	}
 
-	const now = Math.floor(Date.now() / 1000);
-	const expiresAt = now + 300;
+	const { type } = req.body;
+	let payload: Buffer;
 
-	const tokenIdBuf = Buffer.from(BigInt(tokenId).toString(16).padStart(64, "0"), "hex");
-	const chainIdBuf = Buffer.alloc(8);
-	chainIdBuf.writeBigUInt64BE(BigInt(chainId));
-	const issuedAtBuf = Buffer.alloc(4);
-	issuedAtBuf.writeUInt32BE(now);
-	const expiresAtBuf = Buffer.alloc(4);
-	expiresAtBuf.writeUInt32BE(expiresAt);
+	if (type === "auth") {
+		const { chainId, label, address } = req.body;
+		if (!chainId || !label || !address) {
+			res.status(400).json({ error: "Missing required auth fields" });
+			return;
+		}
 
-	let payload = Buffer.concat([
-		tlvField(MCP_TAG.STRUCT_TYPE, Buffer.from([0x0a])),
-		tlvField(MCP_TAG.STRUCT_VERSION, Buffer.from([0x01])),
-		tlvField(MCP_TAG.CHAIN_ID, chainIdBuf),
-		tlvField(MCP_TAG.TOKEN_ID, tokenIdBuf),
-		tlvField(MCP_TAG.ISSUED_AT, issuedAtBuf),
-		tlvField(MCP_TAG.EXPIRES_AT, expiresAtBuf),
-		tlvField(MCP_TAG.ATTESTER_ID, Buffer.from([0x00])),
-		tlvField(MCP_TAG.MARKET_NAME, Buffer.from(String(marketName).slice(0, 128))),
-		tlvField(MCP_TAG.MARKET_OUTCOME, Buffer.from(String(marketOutcome).slice(0, 16))),
-		tlvField(MCP_TAG.MARKET_AMOUNT, Buffer.from(String(marketAmount).slice(0, 32))),
-		tlvField(MCP_TAG.MARKET_SHARES, Buffer.from(String(marketShares).slice(0, 32))),
-		tlvField(MCP_TAG.MARKET_PRICE, Buffer.from(String(marketPrice).slice(0, 32))),
-	]);
+		const now = Math.floor(Date.now() / 1000);
+		const expiresAt = now + 300;
+
+		const chainIdBuf = Buffer.alloc(8);
+		chainIdBuf.writeBigUInt64BE(BigInt(chainId));
+		const issuedAtBuf = Buffer.alloc(4);
+		issuedAtBuf.writeUInt32BE(now);
+		const expiresAtBuf = Buffer.alloc(4);
+		expiresAtBuf.writeUInt32BE(expiresAt);
+
+		payload = Buffer.concat([
+			tlvField(MCP_TAG.STRUCT_TYPE, Buffer.from([0x0b])),
+			tlvField(MCP_TAG.STRUCT_VERSION, Buffer.from([0x01])),
+			tlvField(MCP_TAG.CHAIN_ID, chainIdBuf),
+			tlvField(MCP_TAG.ISSUED_AT, issuedAtBuf),
+			tlvField(MCP_TAG.EXPIRES_AT, expiresAtBuf),
+			tlvField(MCP_TAG.AUTH_LABEL, Buffer.from(String(label).slice(0, 64))),
+			tlvField(MCP_TAG.AUTH_ADDRESS, Buffer.from(String(address).slice(0, 42))),
+		]);
+
+		console.log(`[MCP Sign] auth label="${label}" address=${address}`);
+	} else {
+		const { tokenId, chainId, marketName, marketOutcome, marketAmount, marketShares, marketPrice } =
+			req.body;
+		if (
+			!tokenId ||
+			!chainId ||
+			!marketName ||
+			!marketOutcome ||
+			!marketAmount ||
+			!marketShares ||
+			!marketPrice
+		) {
+			res.status(400).json({ error: "Missing required fields" });
+			return;
+		}
+
+		const now = Math.floor(Date.now() / 1000);
+		const expiresAt = now + 300;
+
+		const tokenIdBuf = Buffer.from(BigInt(tokenId).toString(16).padStart(64, "0"), "hex");
+		const chainIdBuf = Buffer.alloc(8);
+		chainIdBuf.writeBigUInt64BE(BigInt(chainId));
+		const issuedAtBuf = Buffer.alloc(4);
+		issuedAtBuf.writeUInt32BE(now);
+		const expiresAtBuf = Buffer.alloc(4);
+		expiresAtBuf.writeUInt32BE(expiresAt);
+
+		payload = Buffer.concat([
+			tlvField(MCP_TAG.STRUCT_TYPE, Buffer.from([0x0a])),
+			tlvField(MCP_TAG.STRUCT_VERSION, Buffer.from([0x01])),
+			tlvField(MCP_TAG.CHAIN_ID, chainIdBuf),
+			tlvField(MCP_TAG.TOKEN_ID, tokenIdBuf),
+			tlvField(MCP_TAG.ISSUED_AT, issuedAtBuf),
+			tlvField(MCP_TAG.EXPIRES_AT, expiresAtBuf),
+			tlvField(MCP_TAG.ATTESTER_ID, Buffer.from([0x00])),
+			tlvField(MCP_TAG.MARKET_NAME, Buffer.from(String(marketName).slice(0, 128))),
+			tlvField(MCP_TAG.MARKET_OUTCOME, Buffer.from(String(marketOutcome).slice(0, 16))),
+			tlvField(MCP_TAG.MARKET_AMOUNT, Buffer.from(String(marketAmount).slice(0, 32))),
+			tlvField(MCP_TAG.MARKET_SHARES, Buffer.from(String(marketShares).slice(0, 32))),
+			tlvField(MCP_TAG.MARKET_PRICE, Buffer.from(String(marketPrice).slice(0, 32))),
+		]);
+
+		console.log(
+			`[MCP Sign] market="${marketName}" outcome=${marketOutcome} shares=${marketShares} price=${marketPrice} total=${marketAmount}`,
+		);
+	}
 
 	const sign = createSign("SHA256");
 	sign.update(payload);
@@ -660,10 +699,259 @@ app.post("/api/market-context/sign", (req, res) => {
 
 	payload = Buffer.concat([payload, tlvField(MCP_TAG.DER_SIGNATURE, sig)]);
 
-	console.log(
-		`[MCP Sign] market="${marketName}" outcome=${marketOutcome} shares=${marketShares} price=${marketPrice} total=${marketAmount}`,
-	);
 	res.json({ payload: payload.toString("hex") });
+});
+
+// ============ Polymarket Market Lookup Proxy ============
+
+// Proxy Gamma API requests to avoid browser CORS issues
+app.get("/api/polymarket/market-lookup", async (req, res) => {
+	const tokenId = req.query.tokenId as string;
+	if (!tokenId) {
+		res.status(400).json({ error: "Missing tokenId" });
+		return;
+	}
+	try {
+		const gammaRes = await fetch(
+			`https://gamma-api.polymarket.com/markets?clob_token_ids=${tokenId}`,
+		);
+		if (!gammaRes.ok) {
+			res.status(gammaRes.status).json({ error: "Gamma API error" });
+			return;
+		}
+		const data = await gammaRes.json();
+		res.json(data);
+	} catch (err) {
+		console.error("[Polymarket] Market lookup failed:", err);
+		res.status(500).json({ error: "Market lookup failed" });
+	}
+});
+
+// Get latest price + market info for a token (simulation before signing)
+app.get("/api/polymarket/simulate", async (req, res) => {
+	const tokenId = req.query.tokenId as string;
+	if (!tokenId) {
+		res.status(400).json({ error: "Missing tokenId" });
+		return;
+	}
+	try {
+		// Fetch from Gamma API to get negRisk + current price
+		const gammaRes = await fetch(
+			`https://gamma-api.polymarket.com/markets?clob_token_ids=${tokenId}`,
+		);
+		if (!gammaRes.ok) {
+			res.status(gammaRes.status).json({ error: "Gamma API error" });
+			return;
+		}
+		const markets = await gammaRes.json();
+		if (!Array.isArray(markets) || markets.length === 0) {
+			res.status(404).json({ error: "Market not found" });
+			return;
+		}
+		const market = markets[0];
+
+		// Parse clobTokenIds and outcomePrices
+		const clobTokenIds: string[] = typeof market.clobTokenIds === "string"
+			? JSON.parse(market.clobTokenIds) : market.clobTokenIds ?? [];
+		const outcomes: string[] = typeof market.outcomes === "string"
+			? JSON.parse(market.outcomes) : market.outcomes ?? [];
+		const outcomePrices: string[] = typeof market.outcomePrices === "string"
+			? JSON.parse(market.outcomePrices) : market.outcomePrices ?? [];
+
+		const tokenIndex = clobTokenIds.findIndex((id: string) => id === tokenId);
+		const outcome = tokenIndex >= 0 ? outcomes[tokenIndex] ?? "UNKNOWN" : "UNKNOWN";
+		const price = tokenIndex >= 0 ? Number.parseFloat(outcomePrices[tokenIndex] ?? "0") : 0;
+
+		// Determine negRisk from Gamma API
+		const negRisk = market.negRisk === true || market.negRisk === "true";
+
+		// Get authoritative tick size from CLOB API (Gamma's minimum_tick_size is unreliable)
+		let tickSize = "0.01"; // fallback
+		try {
+			const tickRes = await fetch(`https://clob.polymarket.com/tick-size?token_id=${tokenId}`);
+			if (tickRes.ok) {
+				const tickData = await tickRes.json();
+				tickSize = tickData?.minimum_tick_size ?? tickData ?? "0.01";
+				if (typeof tickSize === "number") tickSize = String(tickSize);
+			}
+		} catch {
+			// fallback to Gamma or default
+			tickSize = market.minimum_tick_size ?? "0.01";
+		}
+
+		console.log(`[Simulate] tokenId=${tokenId} price=${price} outcome=${outcome} negRisk=${negRisk} tickSize=${tickSize}`);
+
+		res.json({
+			tokenId,
+			question: market.question ?? market.title ?? "Unknown Market",
+			outcome,
+			price,
+			negRisk,
+			tickSize,
+		});
+	} catch (err) {
+		console.error("[Polymarket] Simulate failed:", err);
+		res.status(500).json({ error: "Simulation failed" });
+	}
+});
+
+// ============ Polymarket CLOB Credentials ============
+
+interface PolymarketCredentials {
+	apiKey: string;
+	secret: string;
+	passphrase: string;
+}
+const polymarketCreds = new Map<string, PolymarketCredentials>();
+
+// Save credentials (after user derives API key via Ledger signature)
+app.post("/api/polymarket/credentials", (req, res) => {
+	const cookies = parseCookies(req.headers.cookie);
+	const sessionId = cookies[SESSION_COOKIE_NAME];
+	const session = sessionId ? authSessions.get(sessionId) : undefined;
+	if (!session || session.expiresAt < Date.now()) {
+		res.status(401).json({ success: false, error: "Authentication required" });
+		return;
+	}
+	const { apiKey, secret, passphrase } = req.body as Partial<PolymarketCredentials>;
+	if (!apiKey || !secret || !passphrase) {
+		res.status(400).json({ success: false, error: "Missing apiKey, secret, or passphrase" });
+		return;
+	}
+	polymarketCreds.set(session.walletAddress, { apiKey, secret, passphrase });
+	console.log(`[Polymarket] Credentials saved for ${session.walletAddress}`);
+	res.json({ success: true });
+});
+
+// Check if credentials exist for the authenticated user
+app.get("/api/polymarket/credentials", (req, res) => {
+	const cookies = parseCookies(req.headers.cookie);
+	const sessionId = cookies[SESSION_COOKIE_NAME];
+	const session = sessionId ? authSessions.get(sessionId) : undefined;
+	if (!session || session.expiresAt < Date.now()) {
+		res.status(401).json({ success: false, error: "Authentication required" });
+		return;
+	}
+	const creds = polymarketCreds.get(session.walletAddress);
+	res.json({ success: true, connected: !!creds });
+});
+
+// Get full credentials (for order submission)
+app.get("/api/polymarket/credentials/full", (req, res) => {
+	const cookies = parseCookies(req.headers.cookie);
+	const sessionId = cookies[SESSION_COOKIE_NAME];
+	const session = sessionId ? authSessions.get(sessionId) : undefined;
+	if (!session || session.expiresAt < Date.now()) {
+		res.status(401).json({ success: false, error: "Authentication required" });
+		return;
+	}
+	const creds = polymarketCreds.get(session.walletAddress);
+	if (!creds) {
+		res.status(404).json({ success: false, error: "No Polymarket credentials" });
+		return;
+	}
+	res.json({ success: true, credentials: creds });
+});
+
+// Delete credentials
+app.delete("/api/polymarket/credentials", (req, res) => {
+	const cookies = parseCookies(req.headers.cookie);
+	const sessionId = cookies[SESSION_COOKIE_NAME];
+	const session = sessionId ? authSessions.get(sessionId) : undefined;
+	if (!session || session.expiresAt < Date.now()) {
+		res.status(401).json({ success: false, error: "Authentication required" });
+		return;
+	}
+	polymarketCreds.delete(session.walletAddress);
+	console.log(`[Polymarket] Credentials removed for ${session.walletAddress}`);
+	res.json({ success: true });
+});
+
+// ============ Polymarket CLOB Order Proxy ============
+// Proxy order submissions to avoid browser CORS issues with clob.polymarket.com
+
+app.post("/api/polymarket/order", async (req, res) => {
+	const cookies = parseCookies(req.headers.cookie);
+	const sessionId = cookies[SESSION_COOKIE_NAME];
+	const session = sessionId ? authSessions.get(sessionId) : undefined;
+	if (!session || session.expiresAt < Date.now()) {
+		res.status(401).json({ success: false, error: "Authentication required" });
+		return;
+	}
+
+	const creds = polymarketCreds.get(session.walletAddress);
+	if (!creds) {
+		res.status(400).json({ success: false, error: "No Polymarket credentials. Connect in Settings." });
+		return;
+	}
+
+	const { orderBody, walletAddress } = req.body as { orderBody: string; walletAddress: string };
+	if (!orderBody || !walletAddress) {
+		res.status(400).json({ success: false, error: "Missing orderBody or walletAddress" });
+		return;
+	}
+
+	// Fix the 'owner' field: Polymarket SDK sets owner = API key, not wallet address
+	let fixedOrderBody: string;
+	try {
+		const parsed = JSON.parse(orderBody);
+		parsed.owner = creds.apiKey;
+		fixedOrderBody = JSON.stringify(parsed);
+	} catch {
+		res.status(400).json({ success: false, error: "Invalid orderBody JSON" });
+		return;
+	}
+
+	console.log(`[CLOB Proxy] Fixed owner from ${walletAddress} to API key ${creds.apiKey.slice(0, 8)}...`);
+
+	// Build HMAC signature server-side (using the fixed body)
+	const timestamp = Math.floor(Date.now() / 1000).toString();
+	const requestPath = "/order";
+	const message = `${timestamp}POST${requestPath}${fixedOrderBody}`;
+
+	const crypto = await import("node:crypto");
+	const hmac = crypto.createHmac("sha256", Buffer.from(creds.secret, "base64"));
+	hmac.update(message);
+	const hmacSig = hmac.digest("base64").replace(/\+/g, "-").replace(/\//g, "_");
+
+	const clobUrl = `https://clob.polymarket.com${requestPath}`;
+	console.log(`[CLOB Proxy] Submitting order for ${walletAddress}`);
+	console.log(`[CLOB Proxy] POST body: ${fixedOrderBody}`);
+
+	try {
+		const clobRes = await fetch(clobUrl, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				POLY_ADDRESS: walletAddress,
+				POLY_API_KEY: creds.apiKey,
+				POLY_PASSPHRASE: creds.passphrase,
+				POLY_SIGNATURE: hmacSig,
+				POLY_TIMESTAMP: timestamp,
+			},
+			body: fixedOrderBody,
+		});
+
+		const responseText = await clobRes.text();
+		console.log(`[CLOB Proxy] Response: ${clobRes.status} ${responseText}`);
+
+		let data: Record<string, unknown> = {};
+		try { data = JSON.parse(responseText); } catch { /* not json */ }
+
+		if (!clobRes.ok) {
+			res.status(clobRes.status).json({
+				success: false,
+				error: data?.error || data?.message || `CLOB error ${clobRes.status}`,
+				raw: responseText,
+			});
+			return;
+		}
+
+		res.json({ success: true, ...data });
+	} catch (err) {
+		console.error("[CLOB Proxy] Network error:", err);
+		res.status(502).json({ success: false, error: "Failed to reach Polymarket CLOB" });
+	}
 });
 
 // ============ Demo/Debug ============

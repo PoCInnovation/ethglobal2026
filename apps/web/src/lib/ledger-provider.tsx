@@ -39,10 +39,12 @@ import {
 	createPublicClient,
 	serializeTransaction,
 } from "viem";
-import { base, baseSepolia, sepolia } from "viem/chains";
+import { base, baseSepolia, polygon, sepolia } from "viem/chains";
 import {
 	isPolymarketOrder,
+	isClobAuth,
 	buildPolymarketContext,
+	buildAuthContext,
 	fetchSignedMCPPayload,
 } from "./polymarket-context";
 
@@ -169,16 +171,17 @@ function isWebBluetoothAvailable(): boolean {
 // =============================================================================
 
 const CHAIN_MAP: Record<number, Chain> = {
+	137: polygon,
 	8453: base,
 	84532: baseSepolia,
 	11155111: sepolia,
 };
 
-// Default chain: Base mainnet
-const DEFAULT_CHAIN_ID = 8453;
+// Default chain: Polygon (for Polymarket)
+const DEFAULT_CHAIN_ID = 137;
 
 function getChain(chainId: number): Chain {
-	return CHAIN_MAP[chainId] ?? base;
+	return CHAIN_MAP[chainId] ?? polygon;
 }
 
 function getRpcUrl(chainId: number): string {
@@ -187,6 +190,9 @@ function getRpcUrl(chainId: number): string {
 		if (typeof customRpc === "string" && customRpc.trim().length > 0) {
 			return customRpc.trim();
 		}
+	}
+	if (chainId === 137) {
+		return "https://polygon.drpc.org";
 	}
 	const chain = getChain(chainId);
 	return chain.rpcUrls.default.http[0] ?? "https://mainnet.base.org";
@@ -1469,6 +1475,21 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 					console.log("[MCP] Payload fetched, length:", mcpPayload.length);
 				} catch (e) {
 					console.warn("[MCP] Failed to fetch market context, signing without clear screens:", e);
+				}
+			}
+			// MCP: pre-fetch auth context for ClobAuth messages
+			if (!mcpPayload && isClobAuth(parsed.primaryType, parsed.domain as Record<string, unknown>)) {
+				try {
+					console.log("[MCP] Building auth context for ClobAuth...");
+					const authInfo = buildAuthContext(
+						parsed.message,
+						Number(parsed.domain.chainId ?? 137),
+					);
+					console.log("[MCP] Auth context built:", authInfo);
+					mcpPayload = await fetchSignedMCPPayload(authInfo);
+					console.log("[MCP] Auth payload fetched, length:", mcpPayload.length);
+				} catch (e) {
+					console.warn("[MCP] Failed to fetch auth context, signing without clear screens:", e);
 				}
 			}
 

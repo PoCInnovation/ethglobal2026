@@ -75,9 +75,18 @@ export async function enrichPolymarketIntent(
 	const outcomeIndex = details.outcome === "Yes" ? 0 : 1;
 	const outcomePrice = market.tokens?.[outcomeIndex]?.price ?? undefined;
 
+	// Resolve token IDs for both outcomes
+	const yesToken = market.tokens?.find((t) => t.outcome === "Yes");
+	const noToken = market.tokens?.find((t) => t.outcome === "No");
+	const outcomeTokenIds =
+		yesToken && noToken ? { yes: yesToken.token_id, no: noToken.token_id } : undefined;
+	const tokenId = details.outcome === "Yes" ? yesToken?.token_id : noToken?.token_id;
+
 	return {
 		...details,
 		marketTitle: market.question,
 		outcomePrice,
+		tokenId,
+		outcomeTokenIds,
 	};
 }

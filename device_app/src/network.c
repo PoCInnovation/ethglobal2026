@@ -10,7 +10,7 @@ const char g_unknown_ticker[] = "???";
 
 // Mapping of chain ids to networks.
 static const network_info_t NETWORK_MAPPING[] = {
-    {.chain_id = 1, .name = "Ethereum", .ticker = "ETH"},
+    {.chain_id = 1, .name = "Polyledger", .ticker = "ETH"},
     {.chain_id = 3, .name = "Ropsten", .ticker = "ETH"},
     {.chain_id = 4, .name = "Rinkeby", .ticker = "ETH"},
     {.chain_id = 5, .name = "Goerli", .ticker = "ETH"},

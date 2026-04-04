@@ -25,6 +25,8 @@ import {
 	isTransferIntent,
 } from "@agent-intents/shared";
 import { buildPolymarketTx } from "@/lib/polymarket";
+import { buildOrderFromIntent, simulateOrder } from "@/lib/polymarket-order";
+import { checkPolymarketConnection, submitSignedOrder } from "@/lib/polymarket-submit";
 import { PolymarketIntentDetail } from "./PolymarketIntentDetail";
 import { Button, Tag } from "@ledgerhq/lumen-ui-react";
 import { Check, Copy } from "@ledgerhq/lumen-ui-react/symbols";
@@ -649,28 +651,52 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 	const handleSign = async () => {
 		setError(null);
 
-		// Polymarket path: build PolyProxy tx and send
+		// Polymarket path: build EIP-712 order, sign on Ledger, print result
 		if (isPolymarket) {
 			if (!account) {
 				setError("Connect your Ledger device to sign this trade");
 				return;
 			}
-			if (isEffectiveWrongChain) {
-				setError(`Switch to ${effectiveChain?.name ?? "Polygon"} to sign`);
+			const polyDetails = details as PolymarketTradeDetails;
+			if (!polyDetails.tokenId) {
+				setError("Market data not enriched (missing tokenId)");
+				return;
+			}
+			const connected = await checkPolymarketConnection();
+			if (!connected) {
+				setError("Connect to Polymarket first (Settings > Polymarket)");
 				return;
 			}
 			setIsSigning(true);
 			try {
-				const tx = buildPolymarketTx(details as PolymarketTradeDetails);
-				const txHash = await sendTransaction(tx);
+				// Step 1: Simulate — fetch latest price + negRisk
+				console.log("[Polymarket] Simulating order for tokenId:", polyDetails.tokenId);
+				const simulation = await simulateOrder(polyDetails.tokenId);
+				console.log("[Polymarket] Simulation:", simulation);
+
+				// Step 2: Build order with fresh price
+				const order = buildOrderFromIntent(polyDetails, account, simulation);
+				console.log("[Polymarket] Order built:", order.message);
+
+				// Step 3: Sign on Ledger
+				const signature = await signTypedDataV4(order);
+				console.log("[Polymarket] Signed:", signature);
+
+				// Step 4: Submit to CLOB
+				const result = await submitSignedOrder(order.message, signature, account);
+				if (!result.success) {
+					throw new Error(result.errorMsg || "CLOB submission failed");
+				}
+				console.log("[Polymarket] Order placed:", result);
+
 				await updateStatus.mutateAsync({
 					id: intent.id,
-					status: "broadcasting",
-					txHash,
+					status: "confirmed",
+					note: `Polymarket order placed (orderID: ${result.orderID ?? "unknown"})`,
 				});
 				onClose();
 			} catch (err) {
-				const msg = err instanceof Error ? err.message : "Transaction failed";
+				const msg = err instanceof Error ? err.message : "Signing failed";
 				const lowerMsg = msg.toLowerCase();
 				const isUserRejection =
 					lowerMsg.includes("reject") ||
@@ -680,7 +706,7 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 					lowerMsg.includes("abort");
 				dismissDeviceAction();
 				if (isUserRejection) {
-					setError("Transaction cancelled");
+					setError("Signing cancelled");
 				} else {
 					setError(msg);
 				}

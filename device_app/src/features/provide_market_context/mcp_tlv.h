@@ -9,6 +9,13 @@
 #define MCP_MAX_PAYLOAD    1024
 #define MCP_MAX_FIELD_LEN  128
 
+// Auth struct type for ClobAuth clear signing
+#define MCP_AUTH_STRUCT_TYPE  0x0B
+
+// TLV tag constants for Auth Context (ClobAuth)
+#define TAG_MCP_AUTH_LABEL   0x70
+#define TAG_MCP_AUTH_ADDRESS 0x71
+
 // TLV tag constants for Market Context Protocol
 #define TAG_MCP_STRUCT_TYPE    0x01
 #define TAG_MCP_STRUCT_VERSION 0x02

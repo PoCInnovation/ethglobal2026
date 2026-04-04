@@ -8,6 +8,9 @@ import {
 	generateAgentKeyPair,
 } from "@/lib/agent-keys";
 import { useLedger } from "@/lib/ledger-provider";
+import { usePolymarketAllowance } from "@/lib/polymarket-allowance";
+import { usePolymarketAuth } from "@/lib/polymarket-auth";
+import { useWalletAuth } from "@/lib/wallet-auth";
 import { cn, formatAddress, formatTimeAgo } from "@/lib/utils";
 import { agentsQueryOptions, useRegisterAgent, useRevokeAgent } from "@/queries/agents";
 import type { TrustchainMember } from "@agent-intents/shared";
@@ -116,8 +119,124 @@ function SettingsPage() {
 				</div>
 			</div>
 
+			{/* Polymarket Connection */}
+			<PolymarketConnectionSection />
+
 			{/* Agent Management */}
 			<AgentManagementSection />
+		</div>
+	);
+}
+
+// =============================================================================
+// Polymarket Connection Section
+// =============================================================================
+
+function PolymarketConnectionSection() {
+	const { isConnected } = useLedger();
+	const { status: authStatus } = useWalletAuth();
+	const { isPolyConnected, isLoading, error, connect, disconnect } = usePolymarketAuth();
+	const {
+		usdcApproved,
+		ctfApproved,
+		allApproved,
+		isApproving,
+		approveAll,
+		loading: allowanceLoading,
+		error: allowanceError,
+	} = usePolymarketAllowance();
+	const isAuthed = authStatus === "authed";
+
+	return (
+		<div className="flex flex-col gap-16">
+			<div className="rounded-lg bg-surface p-24">
+				<div className="flex flex-col gap-16">
+					<div className="flex items-center justify-between">
+						<div className="flex flex-col gap-4">
+							<h2 className="heading-5-semi-bold text-base">Polymarket</h2>
+							<p className="body-2 text-muted">
+								Connect your wallet to the Polymarket CLOB API to enable order placement
+							</p>
+						</div>
+						{isPolyConnected && allApproved ? (
+							<Tag appearance="success" size="sm" label="Ready" />
+						) : isPolyConnected ? (
+							<Tag appearance="warning" size="sm" label="Needs approval" />
+						) : (
+							<Tag appearance="gray" size="sm" label="Not connected" />
+						)}
+					</div>
+
+					{(error || allowanceError) && (
+						<div className="rounded-sm bg-error-strong/25 px-12 py-8">
+							<p className="body-3 text-error">{error || allowanceError}</p>
+						</div>
+					)}
+
+					{isConnected && !isAuthed && (
+						<p className="body-3 text-muted">
+							Authenticating wallet session... Please sign on your Ledger if prompted.
+						</p>
+					)}
+
+					{/* Step 1: Connect to Polymarket CLOB */}
+					<div className="flex items-center gap-12">
+						<span className="body-2 text-muted w-160">1. CLOB API</span>
+						{!isPolyConnected ? (
+							<Button
+								appearance="accent"
+								size="sm"
+								onClick={connect}
+								disabled={!isAuthed || isLoading}
+							>
+								{isLoading ? "Signing..." : "Connect"}
+							</Button>
+						) : (
+							<div className="flex items-center gap-8">
+								<Tag appearance="success" size="sm" label="Connected" />
+								<Button appearance="gray" size="sm" onClick={disconnect}>
+									Disconnect
+								</Button>
+							</div>
+						)}
+					</div>
+
+					{/* Step 2: Token approvals */}
+					{isConnected && (
+						<div className="flex items-center gap-12">
+							<span className="body-2 text-muted w-160">2. Token Approvals</span>
+							{allowanceLoading ? (
+								<span className="body-3 text-muted">Checking...</span>
+							) : allApproved ? (
+								<Tag appearance="success" size="sm" label="All approved" />
+							) : (
+								<div className="flex items-center gap-8">
+									<div className="flex flex-col gap-2">
+										{!usdcApproved && (
+											<span className="body-3 text-warning">USDC.e not approved</span>
+										)}
+										{!ctfApproved && (
+											<span className="body-3 text-warning">CTF tokens not approved</span>
+										)}
+									</div>
+									<Button
+										appearance="accent"
+										size="sm"
+										onClick={approveAll}
+										disabled={isApproving}
+									>
+										{isApproving ? "Approve on Ledger..." : "Approve All"}
+									</Button>
+								</div>
+							)}
+						</div>
+					)}
+
+					{!isConnected && (
+						<p className="body-3 text-muted">Connect your Ledger first to enable Polymarket</p>
+					)}
+				</div>
+			</div>
 		</div>
 	);
 }

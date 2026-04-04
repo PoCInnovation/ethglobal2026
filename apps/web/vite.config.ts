@@ -16,13 +16,11 @@ export default defineConfig(({ command }) => ({
 		},
 	},
 	server: {
-		proxy: process.env.BACKEND_URL
-			? {
-					"/api": {
-						target: process.env.BACKEND_URL,
-						changeOrigin: true,
-					},
-				}
-			: undefined,
+		proxy: {
+			"/api": {
+				target: process.env.BACKEND_URL || "http://localhost:3005",
+				changeOrigin: true,
+			},
+		},
 	},
 }));
