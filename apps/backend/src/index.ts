@@ -14,6 +14,9 @@ import {
 	type X402PaymentPayload,
 	getExplorerTxUrl,
 } from "@agent-intents/shared";
+import { createSign } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import cors from "cors";
 import express from "express";
 import { v4 as uuidv4 } from "uuid";
@@ -555,6 +558,97 @@ app.delete("/api/agents/:id", (req, res) => {
 	member.revokedAt = new Date().toISOString();
 	console.log(`[Agent Revoked] ${member.id} "${member.label}"`);
 	res.json({ success: true, member });
+});
+
+// ============ MCP Market Context Signing ============
+
+// TLV tag constants (must match C device code)
+const MCP_TAG = {
+	STRUCT_TYPE: 0x01,
+	STRUCT_VERSION: 0x02,
+	CHAIN_ID: 0x23,
+	TOKEN_ID: 0x60,
+	ISSUED_AT: 0x61,
+	EXPIRES_AT: 0x62,
+	ATTESTER_ID: 0x63,
+	MARKET_NAME: 0x64,
+	MARKET_OUTCOME: 0x65,
+	MARKET_AMOUNT: 0x66,
+	DER_SIGNATURE: 0x15,
+} as const;
+
+function tlvField(tag: number, value: Buffer): Buffer {
+	const tagBuf = Buffer.alloc(1);
+	tagBuf.writeUInt8(tag);
+	const len = value.length;
+	let lenBuf: Buffer;
+	if (len < 0x80) {
+		lenBuf = Buffer.alloc(1);
+		lenBuf.writeUInt8(len);
+	} else if (len <= 0xff) {
+		lenBuf = Buffer.from([0x81, len]);
+	} else {
+		lenBuf = Buffer.from([0x82, (len >> 8) & 0xff, len & 0xff]);
+	}
+	return Buffer.concat([tagBuf, lenBuf, value]);
+}
+
+// Load the MCP attester private key from the device_app keychain
+const MCP_PEM_PATH = resolve(
+	import.meta.dirname,
+	"../../../device_app/client/src/ledger_app_clients/ethereum/keychain/polymarket_mcp.pem",
+);
+let mcpPrivKeyPem: string | null = null;
+try {
+	mcpPrivKeyPem = readFileSync(MCP_PEM_PATH, "utf-8");
+} catch {
+	console.warn(`[MCP] Could not load attester key from ${MCP_PEM_PATH}`);
+}
+
+app.post("/api/market-context/sign", (req, res) => {
+	const { tokenId, chainId, marketName, marketOutcome, marketAmount } = req.body;
+	if (!tokenId || !chainId || !marketName || !marketOutcome || !marketAmount) {
+		res.status(400).json({ error: "Missing required fields" });
+		return;
+	}
+
+	if (!mcpPrivKeyPem) {
+		res.status(500).json({ error: "Attester key not configured" });
+		return;
+	}
+
+	const now = Math.floor(Date.now() / 1000);
+	const expiresAt = now + 300;
+
+	const tokenIdBuf = Buffer.from(BigInt(tokenId).toString(16).padStart(64, "0"), "hex");
+	const chainIdBuf = Buffer.alloc(8);
+	chainIdBuf.writeBigUInt64BE(BigInt(chainId));
+	const issuedAtBuf = Buffer.alloc(4);
+	issuedAtBuf.writeUInt32BE(now);
+	const expiresAtBuf = Buffer.alloc(4);
+	expiresAtBuf.writeUInt32BE(expiresAt);
+
+	let payload = Buffer.concat([
+		tlvField(MCP_TAG.STRUCT_TYPE, Buffer.from([0x0a])),
+		tlvField(MCP_TAG.STRUCT_VERSION, Buffer.from([0x01])),
+		tlvField(MCP_TAG.CHAIN_ID, chainIdBuf),
+		tlvField(MCP_TAG.TOKEN_ID, tokenIdBuf),
+		tlvField(MCP_TAG.ISSUED_AT, issuedAtBuf),
+		tlvField(MCP_TAG.EXPIRES_AT, expiresAtBuf),
+		tlvField(MCP_TAG.ATTESTER_ID, Buffer.from([0x00])),
+		tlvField(MCP_TAG.MARKET_NAME, Buffer.from(String(marketName).slice(0, 128))),
+		tlvField(MCP_TAG.MARKET_OUTCOME, Buffer.from(String(marketOutcome).slice(0, 16))),
+		tlvField(MCP_TAG.MARKET_AMOUNT, Buffer.from(String(marketAmount).slice(0, 32))),
+	]);
+
+	const sign = createSign("SHA256");
+	sign.update(payload);
+	const sig = sign.sign(mcpPrivKeyPem);
+
+	payload = Buffer.concat([payload, tlvField(MCP_TAG.DER_SIGNATURE, sig)]);
+
+	console.log(`[MCP Sign] market="${marketName}" outcome=${marketOutcome} amount=${marketAmount}`);
+	res.json({ payload: payload.toString("hex") });
 });
 
 // ============ Demo/Debug ============

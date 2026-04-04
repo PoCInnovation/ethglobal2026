@@ -1462,13 +1462,18 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
 			// MCP: pre-fetch market context for Polymarket orders
 			let mcpPayload: Uint8Array | null = null;
+			console.log("[MCP] primaryType:", parsed.primaryType, "domain.chainId:", parsed.domain.chainId, "type:", typeof parsed.domain.chainId);
+			console.log("[MCP] isPolymarketOrder:", isPolymarketOrder(parsed.primaryType, parsed.domain as Record<string, unknown>));
 			if (isPolymarketOrder(parsed.primaryType, parsed.domain as Record<string, unknown>)) {
 				try {
+					console.log("[MCP] Building polymarket context...");
 					const mcpInfo = await buildPolymarketContext(
 						parsed.message,
 						Number(parsed.domain.chainId ?? 137),
 					);
+					console.log("[MCP] Context built:", mcpInfo);
 					mcpPayload = await fetchSignedMCPPayload(mcpInfo);
+					console.log("[MCP] Payload fetched, length:", mcpPayload.length);
 				} catch (e) {
 					console.warn("[MCP] Failed to fetch market context, signing without clear screens:", e);
 				}

@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createHash, createSign } from "node:crypto";
+import { createSign } from "node:crypto";
 
 // TLV tag constants (must match C device code)
 const TAG = {
@@ -80,9 +80,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   // Support pipe-separated PEM (for single-line env vars)
   const pemContent = privKeyPem.replace(/\|/g, "\n");
-  const hash = createHash("sha256").update(payload).digest();
   const sign = createSign("SHA256");
-  sign.update(hash);
+  sign.update(payload);
   const sig = sign.sign(pemContent);
 
   payload = Buffer.concat([payload, tlvField(TAG.DER_SIGNATURE, sig)]);
