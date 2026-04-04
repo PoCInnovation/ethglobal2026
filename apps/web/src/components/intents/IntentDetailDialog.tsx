@@ -7,7 +7,8 @@ import {
 	DialogFooter,
 	DialogHeader,
 } from "@ledgerhq/lumen-ui-react";
-import { useState, useCallback } from "react";
+import type { CouncilArchivedRecord } from "@/lib/councilTypes";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { CouncilDeliberation } from "@/components/council/CouncilDeliberation";
 import { IntentDetailContent } from "./IntentDetailContent";
 
@@ -36,13 +37,34 @@ export function IntentDetailDialog({
 }: IntentDetailDialogProps) {
 	const [councilDone, setCouncilDone] = useState(councilAlreadyDone);
 	const [councilVerdict, setCouncilVerdict] = useState<{ approved: boolean } | null>(null);
+	/** Snapshot from live SSE — `intent` from the client cache never includes server-only `councilResult`. */
+	const [archivedCouncilRecord, setArchivedCouncilRecord] = useState<CouncilArchivedRecord | null>(null);
 	// Council deliberation only starts when user clicks "Analyze"
 	const [councilStarted, setCouncilStarted] = useState(false);
 
+	/** Last intent id we synced — avoids resetting when only `councilAlreadyDone` flips (parent adds id after deliberation). */
+	const councilResetIntentIdRef = useRef<string | undefined>(undefined);
+
+	useEffect(() => {
+		if (!intent?.id) {
+			councilResetIntentIdRef.current = undefined;
+			return;
+		}
+		const id = intent.id;
+		// Same intent as last sync: e.g. parent set `deliberatedIds` → councilAlreadyDone true — must NOT wipe verdict / archive / panel
+		if (councilResetIntentIdRef.current === id) return;
+		councilResetIntentIdRef.current = id;
+		setCouncilDone(councilAlreadyDone);
+		setCouncilStarted(false);
+		setCouncilVerdict(null);
+		setArchivedCouncilRecord(null);
+	}, [intent?.id, councilAlreadyDone]);
+
 	const handleCouncilComplete = useCallback(
-		(result: { approved: boolean; ratio: number }) => {
+		(payload: { approved: boolean; ratio: number; record: CouncilArchivedRecord }) => {
 			setCouncilDone(true);
-			setCouncilVerdict({ approved: result.approved });
+			setCouncilVerdict({ approved: payload.approved });
+			setArchivedCouncilRecord(payload.record);
 			onCouncilComplete?.(intent?.id ?? "");
 		},
 		[intent?.id, onCouncilComplete],
@@ -56,6 +78,7 @@ export function IntentDetailDialog({
 		setCouncilStarted(false);
 		setCouncilDone(false);
 		setCouncilVerdict(null);
+		setArchivedCouncilRecord(null);
 	};
 	const isTransfer = intent.details.type === "transfer";
 	const isX402 =
@@ -202,7 +225,10 @@ export function IntentDetailDialog({
 									/>
 								) : (
 									/* Council done or non-pending */
-									<CouncilResultReadonly intent={intent} />
+									<CouncilResultReadonly
+										intent={intent}
+										archivedRecord={archivedCouncilRecord}
+									/>
 								)}
 							</div>
 						</div>
@@ -264,25 +290,17 @@ function agentAccent(id: string) {
 	);
 }
 
-function CouncilResultReadonly({ intent }: { intent: Intent }) {
-	const councilResult = (intent.details as { councilResult?: unknown })
-		.councilResult as
-		| {
-				approved: boolean;
-				ratio: number;
-				totalFor: number;
-				totalAgainst: number;
-				totalAbstain: number;
-				agents: Array<{
-					agentId: string;
-					agentName: string;
-					role: string;
-					avatar: string;
-					rounds: string[];
-					vote: string;
-				}>;
-		  }
-		| undefined;
+function CouncilResultReadonly({
+	intent,
+	archivedRecord,
+}: {
+	intent: Intent;
+	/** Filled after live deliberation in this session (client intent object lacks server `councilResult`). */
+	archivedRecord?: CouncilArchivedRecord | null;
+}) {
+	const fromIntent = (intent.details as { councilResult?: CouncilArchivedRecord | undefined })
+		.councilResult;
+	const councilResult = archivedRecord ?? fromIntent;
 
 	if (!councilResult) {
 		return (

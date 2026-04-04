@@ -231,16 +231,17 @@ app.post("/api/auth/verify", async (req, res) => {
 });
 
 // GET /api/me – return authenticated wallet from session cookie
+// Always 200 + JSON so the browser does not log a failed fetch on first visit (no cookie yet).
 app.get("/api/me", (req, res) => {
 	const cookies = parseCookies(req.headers.cookie);
 	const sessionId = cookies[SESSION_COOKIE_NAME];
 	if (!sessionId) {
-		res.status(401).json({ success: false, error: "Authentication required" });
+		res.json({ success: false, error: "Authentication required" });
 		return;
 	}
 	const session = authSessions.get(sessionId);
 	if (!session || session.expiresAt < Date.now()) {
-		res.status(401).json({ success: false, error: "Authentication required" });
+		res.json({ success: false, error: "Authentication required" });
 		return;
 	}
 	res.json({ success: true, walletAddress: session.walletAddress });
@@ -1011,6 +1012,7 @@ app.get("/api/polymarket/opportunities", async (req, res) => {
 // GET /api/council/deliberate?intentId=...
 // Streams deliberation events via Server-Sent Events
 app.get("/api/council/deliberate", async (req, res) => {
+	console.log(`[Council SSE] Endpoint hit! intentId=${req.query.intentId}`);
 	const intentId = req.query.intentId as string | undefined;
 	if (!intentId) {
 		res.status(400).json({ error: "Missing intentId" });
@@ -1020,6 +1022,7 @@ app.get("/api/council/deliberate", async (req, res) => {
 	// Find the intent
 	const intent = intents.get(intentId);
 	if (!intent) {
+		console.log(`[Council SSE] Intent ${intentId} not found! Current intents count: ${intents.size}`);
 		res.status(404).json({ error: "Intent not found" });
 		return;
 	}
@@ -1035,7 +1038,7 @@ app.get("/api/council/deliberate", async (req, res) => {
 	const cachedResult = (intent.details as any).councilResult;
 	if (cachedResult) {
 		res.writeHead(200, {
-			"Content-Type": "text/event-stream",
+			"Content-Type": "text/event-stream; charset=utf-8",
 			"Cache-Control": "no-cache",
 			"Connection": "keep-alive",
 			"X-Accel-Buffering": "no",
@@ -1045,9 +1048,9 @@ app.get("/api/council/deliberate", async (req, res) => {
 		return;
 	}
 
-	// Setup SSE
+	// Setup SSE (charset helps some proxies/browsers accept the stream)
 	res.writeHead(200, {
-		"Content-Type": "text/event-stream",
+		"Content-Type": "text/event-stream; charset=utf-8",
 		"Cache-Control": "no-cache",
 		"Connection": "keep-alive",
 		"X-Accel-Buffering": "no",
@@ -1106,18 +1109,20 @@ Should we take a position on this market? If so, which outcome and how much?`;
 		// Run deliberation with streaming SSE
 		const geminiKey = process.env.GEMINI_API_KEY;
 		const openaiKey = process.env.OPENAI_API_KEY;
+		console.log("[Council SSE] Checking API keys: Gemini=", !!geminiKey, "OpenAI=", !!openaiKey);
 		if (!geminiKey && !openaiKey) {
 			send("error", { fatal: true, message: "GEMINI_API_KEY or OPENAI_API_KEY required" });
 			res.end();
 			return;
 		}
 
-		const OpenAI = (await import("openai")).default;
-		const client = geminiKey
-			? new OpenAI({ apiKey: geminiKey, baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/" })
-			: new OpenAI({ apiKey: openaiKey });
-
-		const modelName = process.env.LLM_MODEL || (geminiKey ? "gemini-2.0-flash" : "gpt-4o");
+		const { createLlmOpenAIClient, defaultLlmModel, GEMINI_OPENAI_COMPAT_BASE_URL } =
+			await import("./llm-openai-client.js");
+		const client = createLlmOpenAIClient();
+		const modelName = defaultLlmModel();
+		console.log(
+			`[Council SSE] model=${modelName}${geminiKey ? ` geminiBase=${GEMINI_OPENAI_COMPAT_BASE_URL}` : ""}`,
+		);
 
 		const { SYSTEM_PROMPTS, AGENT_LABELS } = await import("./agent-council.js");
 
@@ -1127,6 +1132,7 @@ Should we take a position on this market? If so, which outcome and how much?`;
 		// Round 1
 		for (const role of agentRoles) {
 			const agentInfo = agentMap[role]!;
+			console.log(`[Council SSE] Round 1: ${role} starts thinking...`);
 			send("agent_thinking", { agentId: agentInfo.id, round: 1 });
 
 			const messages: any[] = [
@@ -1135,6 +1141,7 @@ Should we take a position on this market? If so, which outcome and how much?`;
 			];
 
 			try {
+				console.log(`[Council SSE] Calling client.chat.completions.create for ${role}...`);
 				const stream = await client.chat.completions.create({
 					model: modelName,
 					messages,
@@ -1142,6 +1149,7 @@ Should we take a position on this market? If so, which outcome and how much?`;
 					max_tokens: 800,
 					stream: true,
 				});
+				console.log(`[Council SSE] Client call successful for ${role}, starting iteration...`);
 
 				let fullContent = "";
 				for await (const chunk of stream) {
@@ -1151,6 +1159,7 @@ Should we take a position on this market? If so, which outcome and how much?`;
 						send("agent_token", { agentId: agentInfo.id, token });
 					}
 				}
+				console.log(`[Council SSE] Stream complete for ${role}`);
 
 				allMessages.push({ agent: role, round: 1, content: fullContent });
 				send("agent_message", { agentId: agentInfo.id, round: 1, content: fullContent });
@@ -1169,6 +1178,7 @@ Should we take a position on this market? If so, which outcome and how much?`;
 
 		for (const role of agentRoles) {
 			const agentInfo = agentMap[role]!;
+			console.log(`[Council SSE] Round 2: ${role} starts thinking...`);
 			send("agent_thinking", { agentId: agentInfo.id, round: 2 });
 
 			const otherMessages = allMessages
@@ -1186,6 +1196,7 @@ Should we take a position on this market? If so, which outcome and how much?`;
 			];
 
 			try {
+				console.log(`[Council SSE] Round 2: Calling client.chat.completions.create for ${role}...`);
 				const stream = await client.chat.completions.create({
 					model: modelName,
 					messages,
@@ -1193,6 +1204,7 @@ Should we take a position on this market? If so, which outcome and how much?`;
 					max_tokens: 800,
 					stream: true,
 				});
+				console.log(`[Council SSE] Round 2: Client call successful for ${role}, starting iteration...`);
 
 				let fullContent = "";
 				for await (const chunk of stream) {
@@ -1202,6 +1214,7 @@ Should we take a position on this market? If so, which outcome and how much?`;
 						send("agent_token", { agentId: agentInfo.id, token });
 					}
 				}
+				console.log(`[Council SSE] Round 2: Stream complete for ${role}`);
 
 				allMessages.push({ agent: role, round: 2, content: fullContent });
 				send("agent_message", { agentId: agentInfo.id, round: 2, content: fullContent });

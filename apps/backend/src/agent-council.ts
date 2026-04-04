@@ -16,6 +16,7 @@
 
 import OpenAI from "openai";
 import { v4 as uuidv4 } from "uuid";
+import { createLlmOpenAIClient, defaultLlmModel } from "./llm-openai-client.js";
 import type { MarketOpportunity } from "./polymarket-scanner.js";
 
 // ---------------------------------------------------------------------------
@@ -115,34 +116,8 @@ If you still approve despite your objections, explain what convinced you.`,
 };
 
 // ---------------------------------------------------------------------------
-// OpenAI client
+// OpenAI client (Gemini uses Google OpenAI-compat baseURL — see llm-openai-client.ts)
 // ---------------------------------------------------------------------------
-
-function getOpenAIClient(): OpenAI {
-	// Support Gemini (via OpenAI-compatible endpoint) or OpenAI
-	const geminiKey = process.env.GEMINI_API_KEY;
-	const openaiKey = process.env.OPENAI_API_KEY;
-
-	if (geminiKey) {
-		console.log("[Council] Using Google Gemini API");
-		return new OpenAI({
-			apiKey: geminiKey,
-			baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-		});
-	}
-
-	if (openaiKey) {
-		console.log("[Council] Using OpenAI API");
-		return new OpenAI({ apiKey: openaiKey });
-	}
-
-	throw new Error(
-		"GEMINI_API_KEY or OPENAI_API_KEY environment variable is required for Agent Council",
-	);
-}
-
-/** Default model — override with LLM_MODEL env var */
-const DEFAULT_MODEL = process.env.LLM_MODEL || (process.env.GEMINI_API_KEY ? "gemini-2.0-flash" : "gpt-4o");
 
 async function askAgent(
 	client: OpenAI,
@@ -170,7 +145,7 @@ async function askAgent(
 	}
 
 	const completion = await client.chat.completions.create({
-		model: DEFAULT_MODEL,
+		model: defaultLlmModel(),
 		messages,
 		temperature: 0.7,
 		max_tokens: 800,
@@ -250,7 +225,7 @@ export async function deliberate(
 	market: MarketOpportunity,
 	userReason?: string,
 ): Promise<CouncilDeliberation> {
-	const client = getOpenAIClient();
+	const client = createLlmOpenAIClient();
 	const deliberationId = `dlb_${uuidv4().slice(0, 8)}`;
 
 	const deliberation: CouncilDeliberation = {

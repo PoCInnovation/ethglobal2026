@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useCouncilDeliberation } from "@/hooks/useCouncilDeliberation";
-import type { AgentState, AgentVote, CouncilState } from "@/lib/councilTypes";
+import type { AgentState, AgentVote, CouncilCompletePayload, CouncilState } from "@/lib/councilTypes";
+import { councilStateToArchivedRecord } from "@/lib/councilTypes";
 import { Spinner } from "@/components/ui/Spinner";
 import { Button } from "@ledgerhq/lumen-ui-react";
 
@@ -10,7 +11,7 @@ import { Button } from "@ledgerhq/lumen-ui-react";
 
 interface CouncilDeliberationProps {
   intentId: string;
-  onComplete: (result: { approved: boolean; ratio: number }) => void;
+  onComplete: (payload: CouncilCompletePayload) => void;
 }
 
 // =============================================================================
@@ -214,9 +215,14 @@ function Verdict({ result }: {
 function Feed({ state, onRetry }: { state: CouncilState; onRetry: () => void }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const scrollKey =
+    state.phase +
+    state.currentRound +
+    state.agents.map((a) => a.messages.length + a.currentStreamContent.length).join(",");
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  });
+  }, [scrollKey]);
 
   if (state.phase === "idle" || state.phase === "connecting") {
     return (
@@ -308,16 +314,27 @@ export function CouncilDeliberation({ intentId, onComplete }: CouncilDeliberatio
   const completedRef = useRef(false);
 
   useEffect(() => {
+    startedRef.current = false;
+    completedRef.current = false;
+  }, [intentId]);
+
+  useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
     start();
-  }, [start]);
+  }, [intentId, start]);
 
   useEffect(() => {
     if (completedRef.current) return;
     if (state.result && (state.phase === "complete" || state.phase === "cached")) {
+      const record = councilStateToArchivedRecord(state);
+      if (!record) return;
       completedRef.current = true;
-      onComplete({ approved: state.result.approved, ratio: state.result.ratio });
+      onComplete({
+        approved: state.result.approved,
+        ratio: state.result.ratio,
+        record,
+      });
     }
   }, [state.phase, state.result, onComplete]);
 

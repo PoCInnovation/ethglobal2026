@@ -4,7 +4,7 @@
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireSession } from "./_lib/auth.js";
-import { authError, jsonSuccess, methodRouter } from "./_lib/http.js";
+import { jsonSuccess, methodRouter } from "./_lib/http.js";
 
 export default methodRouter({
 	GET: async (req: VercelRequest, res: VercelResponse) => {
@@ -12,7 +12,8 @@ export default methodRouter({
 			const session = await requireSession(req);
 			jsonSuccess(res, { walletAddress: session.walletAddress });
 		} catch {
-			authError(req, res, "Authentication required", 401);
+			// 200 + success:false avoids browser console noise on optional session probe (same as Express dev).
+			res.status(200).json({ success: false, error: "Authentication required" });
 		}
 	},
 });
