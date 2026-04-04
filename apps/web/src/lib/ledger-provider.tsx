@@ -9,7 +9,7 @@ import {
 	DeviceStatus,
 	type DiscoveredDevice,
 	type DmkError,
-	OpenAppWithDependenciesDeviceAction,
+	OpenAppDeviceAction,
 	UserInteractionRequired,
 	hexaStringToBuffer,
 } from "@ledgerhq/device-management-kit";
@@ -706,20 +706,19 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 		) {
 			const currentApp = (readyState as { currentApp?: { name: string } }).currentApp;
 			console.log("[ensureEthereumApp] currentApp:", currentApp?.name);
-			if (currentApp?.name === "Ethereum") {
-				console.log("[ensureEthereumApp] Ethereum app already open — skipping OpenApp");
+			if (currentApp?.name === "Polymarket") {
+				console.log("[ensureEthereumApp] Polymarket app already open — skipping OpenApp");
 				return true;
 			}
 		}
 
 		// ---------------------------------------------------------------
-		// Step 3: Ethereum app is not open — use OpenAppWithDependencies.
+		// Step 3: App is not open — use OpenAppDeviceAction (no catalog check).
 		// ---------------------------------------------------------------
-		console.log("[ensureEthereumApp] opening Ethereum app via OpenAppWithDependencies");
-		const openAppAction = new OpenAppWithDependenciesDeviceAction({
+		console.log("[ensureEthereumApp] opening Polymarket app via OpenAppDeviceAction");
+		const openAppAction = new OpenAppDeviceAction({
 			input: {
-				application: { name: "Ethereum" },
-				dependencies: [],
+				appName: "Polymarket",
 			},
 		});
 
@@ -1411,13 +1410,18 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
 			// MCP: pre-fetch market context for Polymarket orders
 			let mcpPayload: Uint8Array | null = null;
+			console.log("[MCP] primaryType:", parsed.primaryType, "domain.chainId:", parsed.domain.chainId, "type:", typeof parsed.domain.chainId);
+			console.log("[MCP] isPolymarketOrder:", isPolymarketOrder(parsed.primaryType, parsed.domain as Record<string, unknown>));
 			if (isPolymarketOrder(parsed.primaryType, parsed.domain as Record<string, unknown>)) {
 				try {
+					console.log("[MCP] Building polymarket context...");
 					const mcpInfo = await buildPolymarketContext(
 						parsed.message,
 						Number(parsed.domain.chainId ?? 137),
 					);
+					console.log("[MCP] Context built:", mcpInfo);
 					mcpPayload = await fetchSignedMCPPayload(mcpInfo);
+					console.log("[MCP] Payload fetched, length:", mcpPayload.length);
 				} catch (e) {
 					console.warn("[MCP] Failed to fetch market context, signing without clear screens:", e);
 				}

@@ -1,3 +1,6 @@
+// Use same-origin API in production; allow override in development only.
+const API_BASE = import.meta.env.DEV ? import.meta.env.VITE_BACKEND_URL || "" : "";
+
 // Polymarket CLOB API endpoint
 const POLYMARKET_CLOB_API = "https://clob.polymarket.com";
 
@@ -22,7 +25,7 @@ export function isPolymarketOrder(
   primaryType: string,
   domain: Record<string, unknown>
 ): boolean {
-  return primaryType === POLYMARKET_PRIMARY_TYPE && domain.chainId === 137;
+  return primaryType === POLYMARKET_PRIMARY_TYPE && Number(domain.chainId) === 137;
 }
 
 /**
@@ -95,7 +98,7 @@ export async function buildPolymarketContext(
 export async function fetchSignedMCPPayload(
   info: PolymarketMarketInfo
 ): Promise<Uint8Array> {
-  const res = await fetch("/api/market-context/sign", {
+  const res = await fetch(`${API_BASE}/api/market-context/sign`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

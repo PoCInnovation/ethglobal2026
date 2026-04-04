@@ -1,0 +1,5 @@
+{
+  "oracleAddress": "0x8C9597CB3B336eEEC8fd61cd0c277336eddb525e",
+  "chainSelectorName": "ethereum-testnet-sepolia",
+  "gasLimit": "500000"
+}
