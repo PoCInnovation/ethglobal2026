@@ -42,7 +42,9 @@ import {
 import { base, baseSepolia, polygon, sepolia } from "viem/chains";
 import {
 	isPolymarketOrder,
+	isClobAuth,
 	buildPolymarketContext,
+	buildAuthContext,
 	fetchSignedMCPPayload,
 } from "./polymarket-context";
 
@@ -1470,6 +1472,21 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 					console.log("[MCP] Payload fetched, length:", mcpPayload.length);
 				} catch (e) {
 					console.warn("[MCP] Failed to fetch market context, signing without clear screens:", e);
+				}
+			}
+			// MCP: pre-fetch auth context for ClobAuth messages
+			if (!mcpPayload && isClobAuth(parsed.primaryType, parsed.domain as Record<string, unknown>)) {
+				try {
+					console.log("[MCP] Building auth context for ClobAuth...");
+					const authInfo = buildAuthContext(
+						parsed.message,
+						Number(parsed.domain.chainId ?? 137),
+					);
+					console.log("[MCP] Auth context built:", authInfo);
+					mcpPayload = await fetchSignedMCPPayload(authInfo);
+					console.log("[MCP] Auth payload fetched, length:", mcpPayload.length);
+				} catch (e) {
+					console.warn("[MCP] Failed to fetch auth context, signing without clear screens:", e);
 				}
 			}
 
