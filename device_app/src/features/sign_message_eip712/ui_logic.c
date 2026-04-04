@@ -1055,21 +1055,22 @@ static s_ui_712_pair *mcp_alloc_pair(const char *key, const char *value) {
 static void ui_712_inject_mcp_screens(void) {
     if (!market_context_is_valid()) return;
 
-    // Build chain: Market -> Outcome -> Total -> Shares -> Price/Share
-    // (money-first: user sees market, side, and USDC amount in first 3 screens)
+    // Build chain: Market -> Side -> Outcome -> Total -> Shares -> Price/Share
     s_ui_712_pair *market = mcp_alloc_pair("Market", g_market_context.market_name);
+    s_ui_712_pair *side = mcp_alloc_pair("Side", g_market_context.market_side);
     s_ui_712_pair *outcome = mcp_alloc_pair("Outcome", g_market_context.market_outcome);
     s_ui_712_pair *amount = mcp_alloc_pair("Total", g_market_context.market_amount);
     s_ui_712_pair *shares = mcp_alloc_pair("Shares", g_market_context.market_shares);
     s_ui_712_pair *price = mcp_alloc_pair("Price/Share", g_market_context.market_price);
 
-    if (!market || !outcome || !amount || !shares || !price) {
+    if (!market || !side || !outcome || !amount || !shares || !price) {
         PRINTF("[MCP] Failed to allocate MCP UI pairs\n");
         return;
     }
 
     // Link the chain
-    ((flist_node_t *) market)->next = (flist_node_t *) outcome;
+    ((flist_node_t *) market)->next = (flist_node_t *) side;
+    ((flist_node_t *) side)->next = (flist_node_t *) outcome;
     ((flist_node_t *) outcome)->next = (flist_node_t *) amount;
     ((flist_node_t *) amount)->next = (flist_node_t *) shares;
     ((flist_node_t *) shares)->next = (flist_node_t *) price;
@@ -1078,7 +1079,7 @@ static void ui_712_inject_mcp_screens(void) {
     ((flist_node_t *) price)->next = (flist_node_t *) ui_ctx->ui_pairs;
     ui_ctx->ui_pairs = market;
 
-    PRINTF("[MCP] Injected 5 MCP UI screens at front\n");
+    PRINTF("[MCP] Injected 6 MCP UI screens at front\n");
 }
 
 /**

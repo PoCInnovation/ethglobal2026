@@ -9,6 +9,7 @@
 #define MCP_MARKET_AMOUNT_MAX  32
 #define MCP_MARKET_SHARES_MAX  32
 #define MCP_MARKET_PRICE_MAX   32
+#define MCP_MARKET_SIDE_MAX    16
 
 typedef struct {
     bool valid;      // payload received and parsed OK
@@ -23,6 +24,7 @@ typedef struct {
     char market_amount[MCP_MARKET_AMOUNT_MAX + 1];
     char market_shares[MCP_MARKET_SHARES_MAX + 1];
     char market_price[MCP_MARKET_PRICE_MAX + 1];
+    char market_side[MCP_MARKET_SIDE_MAX + 1];
 } market_context_t;
 
 // Global MCP state

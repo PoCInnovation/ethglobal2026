@@ -576,6 +576,7 @@ const MCP_TAG = {
 	MARKET_AMOUNT: 0x66,
 	MARKET_SHARES: 0x67,
 	MARKET_PRICE: 0x68,
+	MARKET_SIDE: 0x69,
 	AUTH_LABEL: 0x70,
 	AUTH_ADDRESS: 0x71,
 	DER_SIGNATURE: 0x15,
@@ -647,7 +648,7 @@ app.post("/api/market-context/sign", (req, res) => {
 
 		console.log(`[MCP Sign] auth label="${label}" address=${address}`);
 	} else {
-		const { tokenId, chainId, marketName, marketOutcome, marketAmount, marketShares, marketPrice } =
+		const { tokenId, chainId, marketName, marketOutcome, marketAmount, marketShares, marketPrice, marketSide } =
 			req.body;
 		if (
 			!tokenId ||
@@ -686,10 +687,11 @@ app.post("/api/market-context/sign", (req, res) => {
 			tlvField(MCP_TAG.MARKET_AMOUNT, Buffer.from(String(marketAmount).slice(0, 32))),
 			tlvField(MCP_TAG.MARKET_SHARES, Buffer.from(String(marketShares).slice(0, 32))),
 			tlvField(MCP_TAG.MARKET_PRICE, Buffer.from(String(marketPrice).slice(0, 32))),
+			tlvField(MCP_TAG.MARKET_SIDE, Buffer.from(String(marketSide || "Buy").slice(0, 16))),
 		]);
 
 		console.log(
-			`[MCP Sign] market="${marketName}" outcome=${marketOutcome} shares=${marketShares} price=${marketPrice} total=${marketAmount}`,
+			`[MCP Sign] market="${marketName}" outcome=${marketOutcome} side=${marketSide} shares=${marketShares} price=${marketPrice} total=${marketAmount}`,
 		);
 	}
 
