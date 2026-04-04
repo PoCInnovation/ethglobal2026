@@ -1026,28 +1026,46 @@ bool ui_712_feed_to_display(const s_struct_712_field *field_ptr,
 }
 
 /**
- * Inject MCP market context screens into the EIP-712 UI pair list.
- * Called before ui_712_end_sign() when MCP is valid and verified.
+ * Allocate a single MCP pair (key + value) without touching ui_ctx->ui_pairs.
+ */
+static s_ui_712_pair *mcp_alloc_pair(const char *key, const char *value) {
+    s_ui_712_pair *p = NULL;
+    if (APP_MEM_CALLOC((void **) &p, sizeof(*p)) == false) return NULL;
+    p->key = APP_MEM_STRDUP(key);
+    p->value = APP_MEM_STRDUP(value);
+    return p;
+}
+
+/**
+ * Inject MCP market context screens at the BEGINNING of the EIP-712 UI pair
+ * list so the user sees market info first and can skip raw field details.
  */
 static void ui_712_inject_mcp_screens(void) {
     if (!market_context_is_valid()) return;
 
-    // Screen: Market name
-    ui_712_set_title("Market", strlen("Market"));
-    ui_712_set_value(g_market_context.market_name,
-                     strlen(g_market_context.market_name));
+    // Build chain: Market -> Outcome -> Shares -> Price/Share -> Total
+    s_ui_712_pair *market = mcp_alloc_pair("Market", g_market_context.market_name);
+    s_ui_712_pair *outcome = mcp_alloc_pair("Outcome", g_market_context.market_outcome);
+    s_ui_712_pair *shares = mcp_alloc_pair("Shares", g_market_context.market_shares);
+    s_ui_712_pair *price = mcp_alloc_pair("Price/Share", g_market_context.market_price);
+    s_ui_712_pair *amount = mcp_alloc_pair("Total", g_market_context.market_amount);
 
-    // Screen: Outcome
-    ui_712_set_title("Outcome", strlen("Outcome"));
-    ui_712_set_value(g_market_context.market_outcome,
-                     strlen(g_market_context.market_outcome));
+    if (!market || !outcome || !shares || !price || !amount) {
+        PRINTF("[MCP] Failed to allocate MCP UI pairs\n");
+        return;
+    }
 
-    // Screen: Amount
-    ui_712_set_title("Amount", strlen("Amount"));
-    ui_712_set_value(g_market_context.market_amount,
-                     strlen(g_market_context.market_amount));
+    // Link the chain
+    ((flist_node_t *) market)->next = (flist_node_t *) outcome;
+    ((flist_node_t *) outcome)->next = (flist_node_t *) shares;
+    ((flist_node_t *) shares)->next = (flist_node_t *) price;
+    ((flist_node_t *) price)->next = (flist_node_t *) amount;
 
-    PRINTF("[MCP] Injected 3 MCP UI screens\n");
+    // Prepend to existing list
+    ((flist_node_t *) amount)->next = (flist_node_t *) ui_ctx->ui_pairs;
+    ui_ctx->ui_pairs = market;
+
+    PRINTF("[MCP] Injected 5 MCP UI screens at front\n");
 }
 
 /**

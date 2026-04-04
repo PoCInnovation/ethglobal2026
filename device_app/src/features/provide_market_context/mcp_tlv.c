@@ -80,6 +80,14 @@ static bool parse_market_amount(const tlv_data_t *data, s_mcp_parse_ctx *pctx) {
     return parse_string_field(data, pctx->ctx->market_amount, MCP_MARKET_AMOUNT_MAX);
 }
 
+static bool parse_market_shares(const tlv_data_t *data, s_mcp_parse_ctx *pctx) {
+    return parse_string_field(data, pctx->ctx->market_shares, MCP_MARKET_SHARES_MAX);
+}
+
+static bool parse_market_price(const tlv_data_t *data, s_mcp_parse_ctx *pctx) {
+    return parse_string_field(data, pctx->ctx->market_price, MCP_MARKET_PRICE_MAX);
+}
+
 static bool parse_signature(const tlv_data_t *data, s_mcp_parse_ctx *pctx) {
     buffer_t sig = {0};
     if (!get_buffer_from_tlv_data(data,
@@ -107,6 +115,8 @@ static bool mcp_common_handler(const tlv_data_t *data, s_mcp_parse_ctx *pctx);
     X(TAG_MCP_MARKET_NAME, TAG_MKT_NAME, parse_market_name, ENFORCE_UNIQUE_TAG)            \
     X(TAG_MCP_MARKET_OUTCOME, TAG_MKT_OUT, parse_market_outcome, ENFORCE_UNIQUE_TAG)       \
     X(TAG_MCP_MARKET_AMOUNT, TAG_MKT_AMT, parse_market_amount, ENFORCE_UNIQUE_TAG)         \
+    X(TAG_MCP_MARKET_SHARES, TAG_MKT_SHR, parse_market_shares, ENFORCE_UNIQUE_TAG)       \
+    X(TAG_MCP_MARKET_PRICE, TAG_MKT_PRC, parse_market_price, ENFORCE_UNIQUE_TAG)          \
     X(TAG_MCP_DER_SIGNATURE, TAG_DER_SIG, parse_signature, ENFORCE_UNIQUE_TAG)
 
 DEFINE_TLV_PARSER(MCP_TAGS, &mcp_common_handler, mcp_tlv_parser)
@@ -147,6 +157,8 @@ static bool mcp_verify_mandatory_tags(const s_mcp_parse_ctx *pctx) {
                                    TAG_MKT_NAME,
                                    TAG_MKT_OUT,
                                    TAG_MKT_AMT,
+                                   TAG_MKT_SHR,
+                                   TAG_MKT_PRC,
                                    TAG_DER_SIG);
 }
 

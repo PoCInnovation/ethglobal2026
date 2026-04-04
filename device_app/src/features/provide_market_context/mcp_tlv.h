@@ -20,6 +20,8 @@
 #define TAG_MCP_MARKET_NAME    0x64
 #define TAG_MCP_MARKET_OUTCOME 0x65
 #define TAG_MCP_MARKET_AMOUNT  0x66
+#define TAG_MCP_MARKET_SHARES  0x67
+#define TAG_MCP_MARKET_PRICE   0x68
 #define TAG_MCP_DER_SIGNATURE  0x15
 
 bool mcp_parse_payload(const buffer_t *buf);
