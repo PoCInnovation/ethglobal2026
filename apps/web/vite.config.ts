@@ -5,7 +5,6 @@ import { defineConfig, loadEnv } from "vite";
 
 export default defineConfig(({ command, mode }) => {
 	const env = loadEnv(mode, __dirname, "");
-	const backendUrl = env.BACKEND_URL || process.env.BACKEND_URL;
 
 	return {
 		plugins: [TanStackRouterVite(), react()],
@@ -22,7 +21,7 @@ export default defineConfig(({ command, mode }) => {
 		server: {
 			proxy: {
 				"/api": {
-					target: backendUrl || "http://localhost:3005",
+					target: "http://localhost:3005",
 					changeOrigin: true,
 				},
 			},

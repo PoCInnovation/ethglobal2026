@@ -182,7 +182,7 @@ export const POLYMARKET_CONFIG = {
     GAMMA_API_BASE: "https://gamma-api.polymarket.com",
     CLOB_API_BASE: "https://clob.polymarket.com",
     /** Oracle CRE contract — override via ORACLE_CRE_ADDRESS / VITE_ORACLE_CRE_ADDRESS env var */
-    ORACLE_CRE_ADDRESS: "0x8C9597CB3B336eEEC8fd61cd0c277336eddb525e",
+    ORACLE_CRE_ADDRESS: "0xB7A357155344456af8FeAC6C9E4504642E60362e",
     /** Polymarket CTF Exchange on Polygon */
     CTF_EXCHANGE: "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E",
     /** Polymarket Neg Risk CTF Exchange on Polygon */

@@ -36,6 +36,8 @@ export function IntentDetailDialog({
 }: IntentDetailDialogProps) {
 	const [councilDone, setCouncilDone] = useState(councilAlreadyDone);
 	const [councilVerdict, setCouncilVerdict] = useState<{ approved: boolean } | null>(null);
+	// Council deliberation only starts when user clicks "Analyze"
+	const [councilStarted, setCouncilStarted] = useState(false);
 
 	const handleCouncilComplete = useCallback(
 		(result: { approved: boolean; ratio: number }) => {
@@ -48,7 +50,13 @@ export function IntentDetailDialog({
 
 	if (!intent) return null;
 
-	const handleClose = () => onOpenChange(false);
+	const handleClose = () => {
+		onOpenChange(false);
+		// Reset council state when dialog closes
+		setCouncilStarted(false);
+		setCouncilDone(false);
+		setCouncilVerdict(null);
+	};
 	const isTransfer = intent.details.type === "transfer";
 	const isX402 =
 		isTransfer &&
@@ -62,7 +70,7 @@ export function IntentDetailDialog({
 			? "Authorize API Payment"
 			: "Review Transfer";
 
-	// ─── Polymarket: full-control Radix dialog, two-panel layout ─────────────
+	// ─── Polymarket: two-panel layout with "Analyze" trigger ─────────────
 	if (isPolymarket) {
 		return (
 			<RadixDialog.Root open={open} onOpenChange={onOpenChange}>
@@ -72,7 +80,7 @@ export function IntentDetailDialog({
 						className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out"
 					/>
 
-					{/* Content — full control, no Lumen constraints */}
+					{/* Content */}
 					<RadixDialog.Content
 						aria-describedby={undefined}
 						className="fixed left-1/2 top-1/2 z-[100] -translate-x-1/2 -translate-y-1/2 w-[calc(100vw-48px)] max-w-[1200px] rounded-2xl overflow-hidden shadow-2xl outline-none data-[state=open]:animate-content-show data-[state=closed]:animate-content-hide"
@@ -88,7 +96,7 @@ export function IntentDetailDialog({
 									className="text-[11px] font-mono uppercase tracking-[0.15em]"
 									style={{ color: "#4a4a55" }}
 								>
-									Council Review
+									Polymarket Trade
 								</span>
 								<span style={{ color: "#333" }}>·</span>
 								<RadixDialog.Title className="text-[14px] font-semibold text-white/80">
@@ -106,7 +114,7 @@ export function IntentDetailDialog({
 						{/* Two-panel body */}
 						<div className="flex" style={{ height: "calc(100vh - 120px)", maxHeight: "820px" }}>
 
-							{/* ── Left panel (260px) — trade info + actions ── */}
+							{/* ── Left panel — trade info + actions ── */}
 							<div
 								className="w-[380px] flex-shrink-0 flex flex-col border-r overflow-hidden"
 								style={{ borderColor: "rgba(255,255,255,0.07)" }}
@@ -148,7 +156,7 @@ export function IntentDetailDialog({
 									className="px-16 py-14 border-t flex flex-col gap-8"
 									style={{ borderColor: "rgba(255,255,255,0.07)" }}
 								>
-									{isPending && !councilDone && (
+									{isPending && !councilDone && councilStarted && (
 										<div className="flex items-center justify-center gap-6 py-4">
 											<span
 												className="size-[5px] rounded-full animate-pulse"
@@ -159,23 +167,52 @@ export function IntentDetailDialog({
 											</span>
 										</div>
 									)}
-									{isPending && (
-										<IntentDetailContent.Actions intent={intent} onClose={handleClose} />
-									)}
+									{/* Always show Sign/Reject actions */}
+									<IntentDetailContent.Actions intent={intent} onClose={handleClose} />
 								</div>
 							</div>
 
-							{/* ── Right panel — deliberation chat ── */}
+							{/* ── Right panel — council analysis ── */}
 							<div
 								className="flex-1 flex flex-col min-w-0 overflow-hidden"
 								style={{ background: "#0d0d0f" }}
 							>
-								{isPending ? (
+								{!councilStarted ? (
+									/* Council not started — show Analyze button */
+									<div className="flex-1 flex flex-col items-center justify-center gap-16 px-20">
+										<span className="text-[40px]">🧑‍⚖️</span>
+										<div className="text-center">
+											<p className="text-[14px] font-semibold text-white/70">
+												AI Council Analysis
+											</p>
+											<p className="text-[12px] text-white/30 mt-4 max-w-[320px]">
+												Have 3 AI agents (Analyst, Risk Manager, Contrarian) debate this market before you sign.
+											</p>
+										</div>
+										<button
+											type="button"
+											onClick={() => setCouncilStarted(true)}
+											className="px-24 py-12 rounded-xl text-[14px] font-bold transition-all duration-300"
+											style={{
+												background: "linear-gradient(135deg, #7c3aed, #2563eb)",
+												color: "#fff",
+												boxShadow: "0 0 20px rgba(124,58,237,0.3)",
+											}}
+										>
+											🔍 Analyze this trade
+										</button>
+										<p className="text-[10px] text-white/15 text-center">
+											Optional — you can sign directly without analysis
+										</p>
+									</div>
+								) : isPending && !councilDone ? (
+									/* Council deliberating */
 									<CouncilDeliberation
 										intentId={intent.id}
 										onComplete={handleCouncilComplete}
 									/>
 								) : (
+									/* Council done or non-pending */
 									<CouncilResultReadonly intent={intent} />
 								)}
 							</div>

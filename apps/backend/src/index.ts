@@ -306,7 +306,7 @@ app.get("/api/intents", (req, res) => {
 	const limit = Number.isFinite(parsedLimit) ? Math.min(100, Math.max(1, parsedLimit)) : 50;
 
 	const userIntents = Array.from(intents.values())
-		.filter((i) => i.userId === userId)
+		.filter((i) => i.userId === userId || i.userId === "polymarket-scanner")
 		.filter((i) => !status || i.status === status)
 		.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 		.slice(0, limit);
@@ -1009,6 +1009,270 @@ app.get("/api/polymarket/opportunities", async (req, res) => {
 	}
 });
 
+// ============ Council SSE Deliberation ============
+// GET /api/council/deliberate?intentId=...
+// Streams deliberation events via Server-Sent Events
+app.get("/api/council/deliberate", async (req, res) => {
+	const intentId = req.query.intentId as string | undefined;
+	if (!intentId) {
+		res.status(400).json({ error: "Missing intentId" });
+		return;
+	}
+
+	// Find the intent
+	const intent = intents.get(intentId);
+	if (!intent) {
+		res.status(404).json({ error: "Intent not found" });
+		return;
+	}
+
+	if (intent.details.type !== "polymarket_trade") {
+		res.status(400).json({ error: "Not a Polymarket trade" });
+		return;
+	}
+
+	const polyDetails = intent.details as PolymarketTradeDetails;
+
+	// Check if council result already exists (cached)
+	const cachedResult = (intent.details as any).councilResult;
+	if (cachedResult) {
+		res.writeHead(200, {
+			"Content-Type": "text/event-stream",
+			"Cache-Control": "no-cache",
+			"Connection": "keep-alive",
+			"X-Accel-Buffering": "no",
+		});
+		res.write(`data: ${JSON.stringify({ type: "council_cached", payload: cachedResult })}\n\n`);
+		res.end();
+		return;
+	}
+
+	// Setup SSE
+	res.writeHead(200, {
+		"Content-Type": "text/event-stream",
+		"Cache-Control": "no-cache",
+		"Connection": "keep-alive",
+		"X-Accel-Buffering": "no",
+	});
+
+	const send = (type: string, payload: unknown) => {
+		if (!res.closed) {
+			res.write(`data: ${JSON.stringify({ type, payload })}\n\n`);
+		}
+	};
+
+	// Agent mapping: our backend roles → frontend agent display
+	const agentMap: Record<string, { id: string; name: string; role: string; avatar: string }> = {
+		analyst: { id: "bull", name: "Bull Analyst", role: "Market Analysis", avatar: "📊" },
+		riskManager: { id: "bear", name: "Risk Manager", role: "Risk Assessment", avatar: "🛡️" },
+		contrarian: { id: "quant", name: "Contrarian", role: "Devil's Advocate", avatar: "🔥" },
+	};
+
+	// Send council_started
+	send("council_started", {
+		agents: Object.values(agentMap),
+	});
+
+	try {
+		// Get market details for the deliberation
+		const market = await getMarketDetails(polyDetails.conditionId);
+		if (!market) {
+			send("error", { fatal: true, message: "Market not found" });
+			res.end();
+			return;
+		}
+
+		// Build context
+		const outcomesStr = market.outcomes
+			.map((o) => `  - ${o.name}: ${(o.price * 100).toFixed(1)}%`)
+			.join("\n");
+
+		const marketContext = `## Trading Opportunity
+
+**Market:** ${market.question}
+**Condition ID:** ${market.conditionId}
+
+**Outcomes & Prices:**
+${outcomesStr}
+
+**24h Volume:** $${market.volume24h.toLocaleString()}
+**Liquidity:** $${market.liquidity.toLocaleString()}
+**End Date:** ${market.endDate}
+**Signal:** ${market.signal} (strength: ${market.signalStrength}/100)
+**Memo:** ${market.memo}
+
+The intent proposes: ${polyDetails.outcome} for ${polyDetails.amount} USDC.
+
+Should we take a position on this market? If so, which outcome and how much?`;
+
+		// Run deliberation with streaming SSE
+		const geminiKey = process.env.GEMINI_API_KEY;
+		const openaiKey = process.env.OPENAI_API_KEY;
+		if (!geminiKey && !openaiKey) {
+			send("error", { fatal: true, message: "GEMINI_API_KEY or OPENAI_API_KEY required" });
+			res.end();
+			return;
+		}
+
+		const OpenAI = (await import("openai")).default;
+		const client = geminiKey
+			? new OpenAI({ apiKey: geminiKey, baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/" })
+			: new OpenAI({ apiKey: openaiKey });
+
+		const modelName = process.env.LLM_MODEL || (geminiKey ? "gemini-2.0-flash" : "gpt-4o");
+
+		const { SYSTEM_PROMPTS, AGENT_LABELS } = await import("./agent-council.js");
+
+		const agentRoles = ["analyst", "riskManager", "contrarian"] as const;
+		const allMessages: Array<{ agent: string; round: number; content: string }> = [];
+
+		// Round 1
+		for (const role of agentRoles) {
+			const agentInfo = agentMap[role]!;
+			send("agent_thinking", { agentId: agentInfo.id, round: 1 });
+
+			const messages: any[] = [
+				{ role: "system", content: SYSTEM_PROMPTS[role] },
+				{ role: "user", content: marketContext },
+			];
+
+			try {
+				const stream = await client.chat.completions.create({
+					model: modelName,
+					messages,
+					temperature: 0.7,
+					max_tokens: 800,
+					stream: true,
+				});
+
+				let fullContent = "";
+				for await (const chunk of stream) {
+					const token = chunk.choices[0]?.delta?.content;
+					if (token) {
+						fullContent += token;
+						send("agent_token", { agentId: agentInfo.id, token });
+					}
+				}
+
+				allMessages.push({ agent: role, round: 1, content: fullContent });
+				send("agent_message", { agentId: agentInfo.id, round: 1, content: fullContent });
+			} catch (err) {
+				console.error(`[Council SSE] ${role} error:`, err);
+				allMessages.push({ agent: role, round: 1, content: "(Agent error)\nVOTE: ABSTAIN" });
+				send("agent_message", { agentId: agentInfo.id, round: 1, content: "(Agent error)\nVOTE: ABSTAIN" });
+			}
+		}
+
+		// Round 2
+		const round1Context = allMessages
+			.filter(m => m.round === 1)
+			.map(m => `[${AGENT_LABELS[m.agent as keyof typeof AGENT_LABELS]}]: ${m.content}`)
+			.join("\n\n---\n\n");
+
+		for (const role of agentRoles) {
+			const agentInfo = agentMap[role]!;
+			send("agent_thinking", { agentId: agentInfo.id, round: 2 });
+
+			const otherMessages = allMessages
+				.filter(m => m.agent !== role && m.round === 1)
+				.map(m => `[${AGENT_LABELS[m.agent as keyof typeof AGENT_LABELS]}]: ${m.content}`)
+				.join("\n\n---\n\n");
+
+			const messages: any[] = [
+				{ role: "system", content: SYSTEM_PROMPTS[role as keyof typeof SYSTEM_PROMPTS] },
+				{ role: "user", content: marketContext },
+				{
+					role: "user",
+					content: `Here are the other council members' opinions:\n\n${otherMessages}\n\nGive your final response for round 2.`,
+				},
+			];
+
+			try {
+				const stream = await client.chat.completions.create({
+					model: modelName,
+					messages,
+					temperature: 0.7,
+					max_tokens: 800,
+					stream: true,
+				});
+
+				let fullContent = "";
+				for await (const chunk of stream) {
+					const token = chunk.choices[0]?.delta?.content;
+					if (token) {
+						fullContent += token;
+						send("agent_token", { agentId: agentInfo.id, token });
+					}
+				}
+
+				allMessages.push({ agent: role, round: 2, content: fullContent });
+				send("agent_message", { agentId: agentInfo.id, round: 2, content: fullContent });
+
+				// Parse vote
+				const voteMatch = /VOTE:\s*(APPROVE|REJECT|ABSTAIN)/i.exec(fullContent);
+				const vote = voteMatch?.[1]?.toUpperCase() === "APPROVE" ? "FOR" : voteMatch?.[1]?.toUpperCase() === "REJECT" ? "AGAINST" : "ABSTAIN";
+				send("agent_vote", { agentId: agentInfo.id, vote });
+			} catch (err) {
+				console.error(`[Council SSE] ${role} round 2 error:`, err);
+				allMessages.push({ agent: role, round: 2, content: "(Error)\nVOTE: ABSTAIN" });
+				send("agent_message", { agentId: agentInfo.id, round: 2, content: "(Error)\nVOTE: ABSTAIN" });
+				send("agent_vote", { agentId: agentInfo.id, vote: "ABSTAIN" });
+			}
+		}
+
+		// Compute votes
+		const round2 = allMessages.filter(m => m.round === 2);
+		let totalFor = 0, totalAgainst = 0, totalAbstain = 0;
+		for (const msg of round2) {
+			const voteMatch = /VOTE:\s*(APPROVE|REJECT|ABSTAIN)/i.exec(msg.content);
+			const v = voteMatch?.[1]?.toUpperCase();
+			if (v === "APPROVE") totalFor++;
+			else if (v === "REJECT") totalAgainst++;
+			else totalAbstain++;
+		}
+		const total = totalFor + totalAgainst + totalAbstain;
+		const approved = totalFor >= 2;
+		const ratio = total > 0 ? totalFor / total : 0;
+
+		const councilResult = {
+			approved,
+			ratio,
+			totalFor,
+			totalAgainst,
+			totalAbstain,
+			summary: approved
+				? `Trade approved by council (${totalFor}/${total} votes)`
+				: `Trade rejected by council (${totalAgainst}/${total} against)`,
+			agents: agentRoles.map(role => {
+				const info = agentMap[role]!;
+				const rounds = allMessages.filter(m => m.agent === role).map(m => m.content);
+				const lastMsg = rounds[rounds.length - 1] || "";
+				const voteMatch = /VOTE:\s*(APPROVE|REJECT|ABSTAIN)/i.exec(lastMsg);
+				const vote = voteMatch?.[1]?.toUpperCase() === "APPROVE" ? "FOR" : voteMatch?.[1]?.toUpperCase() === "REJECT" ? "AGAINST" : "ABSTAIN";
+				return {
+					agentId: info.id,
+					agentName: info.name,
+					role: info.role,
+					avatar: info.avatar,
+					rounds,
+					vote,
+				};
+			}),
+		};
+
+		// Cache result in intent details
+		(intent.details as any).councilResult = councilResult;
+
+		send("council_result", councilResult);
+		console.log(`[Council SSE] Deliberation complete for ${intentId}: ${approved ? "APPROVED" : "REJECTED"} (${totalFor}/${total})`);
+	} catch (err) {
+		console.error("[Council SSE] Fatal error:", err);
+		send("error", { fatal: true, message: err instanceof Error ? err.message : "Deliberation failed" });
+	}
+
+	res.end();
+});
+
 // Launch a council deliberation on a market
 app.post("/api/polymarket/council/deliberate", async (req, res) => {
 	try {
@@ -1145,9 +1409,20 @@ app.listen(PORT, () => {
   `);
 
 	// ============ Auto-Scanner ============
-	// Run in background every 60s, stores latest scan results in memory
+	// Run in background every 60s, creates intents from scan results
 	let latestScanResults: Awaited<ReturnType<typeof scanMarkets>> = [];
 	let scanRunning = false;
+
+	// Track which conditionIds already have a pending intent (avoid duplicates)
+	function getExistingConditionIds(): Set<string> {
+		const ids = new Set<string>();
+		for (const intent of intents.values()) {
+			if (intent.details.type === "polymarket_trade" && intent.status === "pending") {
+				ids.add((intent.details as any).conditionId);
+			}
+		}
+		return ids;
+	}
 
 	async function runAutoScan() {
 		if (scanRunning) {
@@ -1156,7 +1431,50 @@ app.listen(PORT, () => {
 		}
 		scanRunning = true;
 		try {
-			latestScanResults = await scanMarkets({ limit: 15, sortBy: "volume" });
+			latestScanResults = await scanMarkets({ limit: 10, sortBy: "volume" });
+			
+			// Create intents for new markets
+			const existing = getExistingConditionIds();
+			let created = 0;
+			for (const market of latestScanResults) {
+				if (existing.has(market.conditionId)) continue;
+				
+				// Pick the best outcome (highest signal)
+				const bestOutcome = market.outcomes.reduce((a, b) => a.price > b.price ? a : b);
+				
+				const id = `int_${Date.now()}_${uuidv4().slice(0, 8)}`;
+				const now = new Date().toISOString();
+				const intent: Intent = {
+					id,
+					userId: "polymarket-scanner",
+					agentId: "scanner",
+					agentName: "Polymarket Scanner",
+					details: {
+						type: "polymarket_trade" as const,
+						conditionId: market.conditionId,
+						marketTitle: market.question,
+						outcome: bestOutcome.name as "Yes" | "No",
+						amount: "50",
+						outcomePrice: bestOutcome.price,
+						tokenId: bestOutcome.tokenId,
+						chainId: 137,
+						memo: `${market.signal} (${market.signalStrength}/100) — ${market.memo}`,
+					},
+					urgency: market.signalStrength > 80 ? "high" : "normal",
+					status: "pending",
+					createdAt: now,
+					expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+					statusHistory: [{ status: "pending", timestamp: now }],
+				};
+				intents.set(id, intent);
+				created++;
+				console.log(`[AutoScan] 📝 Created intent ${id} for "${market.question}" (${market.signal})`);
+			}
+			if (created > 0) {
+				console.log(`[AutoScan] ✅ Created ${created} new intents from scan`);
+			} else {
+				console.log(`[AutoScan] ℹ️ No new markets to create intents for`);
+			}
 		} catch (err) {
 			console.error("[AutoScan] ❌ Error:", err instanceof Error ? err.message : err);
 		} finally {
@@ -1174,7 +1492,7 @@ app.listen(PORT, () => {
 		runAutoScan();
 	}, 60_000);
 
-	// Expose cached scan results (faster than re-fetching Gamma)
+	// Expose cached scan results
 	app.get("/api/polymarket/scan-cache", (_req, res) => {
 		res.json({
 			success: true,
@@ -1183,4 +1501,11 @@ app.listen(PORT, () => {
 			nextScanIn: "~60s",
 		});
 	});
+
+	// Manual trigger to scan now
+	app.post("/api/polymarket/scan-now", async (_req, res) => {
+		await runAutoScan();
+		res.json({ success: true, count: latestScanResults.length });
+	});
 });
+
