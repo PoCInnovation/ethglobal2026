@@ -8,6 +8,7 @@ const POLYMARKET_CLOB_API = "https://clob.polymarket.com";
 const POLYMARKET_PRIMARY_TYPE = "Order";
 
 export interface PolymarketMarketInfo {
+  type?: "order";
   tokenId: bigint;
   chainId: number;
   marketName: string;
@@ -28,6 +29,38 @@ export function isPolymarketOrder(
   domain: Record<string, unknown>
 ): boolean {
   return primaryType === POLYMARKET_PRIMARY_TYPE && Number(domain.chainId) === 137;
+}
+
+/**
+ * Returns true if the given EIP-712 typed data is a ClobAuth message.
+ */
+export function isClobAuth(
+  primaryType: string,
+  domain: Record<string, unknown>
+): boolean {
+  return primaryType === "ClobAuth" && Number(domain.chainId) === 137;
+}
+
+export interface AuthContextInfo {
+  type: "auth";
+  chainId: number;
+  label: string;
+  address: string;
+}
+
+/**
+ * Build auth context info from a ClobAuth EIP-712 typed data message.
+ */
+export function buildAuthContext(
+  message: Record<string, unknown>,
+  chainId: number
+): AuthContextInfo {
+  return {
+    type: "auth",
+    chainId,
+    label: "Polymarket",
+    address: String(message.address),
+  };
 }
 
 /**
@@ -110,22 +143,32 @@ export async function buildPolymarketContext(
 
 /**
  * Fetch a signed MCP TLV payload from the backend attester service.
+ * Accepts either a PolymarketMarketInfo (order) or AuthContextInfo (auth).
  */
 export async function fetchSignedMCPPayload(
-  info: PolymarketMarketInfo
+  info: PolymarketMarketInfo | AuthContextInfo
 ): Promise<Uint8Array> {
+  const body = info.type === "auth"
+    ? {
+        type: "auth",
+        chainId: info.chainId,
+        label: info.label,
+        address: info.address,
+      }
+    : {
+        tokenId: (info as PolymarketMarketInfo).tokenId.toString(),
+        chainId: info.chainId,
+        marketName: (info as PolymarketMarketInfo).marketName,
+        marketOutcome: (info as PolymarketMarketInfo).marketOutcome,
+        marketAmount: (info as PolymarketMarketInfo).marketAmount,
+        marketShares: (info as PolymarketMarketInfo).marketShares,
+        marketPrice: (info as PolymarketMarketInfo).marketPrice,
+      };
+
   const res = await fetch(`${API_BASE}/api/market-context/sign`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      tokenId: info.tokenId.toString(),
-      chainId: info.chainId,
-      marketName: info.marketName,
-      marketOutcome: info.marketOutcome,
-      marketAmount: info.marketAmount,
-      marketShares: info.marketShares,
-      marketPrice: info.marketPrice,
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     throw new Error(`MCP signing failed: ${res.status}`);
