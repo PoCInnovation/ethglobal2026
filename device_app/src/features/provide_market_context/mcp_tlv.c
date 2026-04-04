@@ -164,6 +164,14 @@ bool mcp_parse_payload(const buffer_t *buf) {
         PRINTF("[MCP] Missing mandatory tags\n");
         return false;
     }
+    // TTL sanity: expires_at must be strictly after issued_at
+    if (g_market_context.expires_at <= g_market_context.issued_at) {
+        PRINTF("[MCP] TTL sanity failed: expires_at(%u) <= issued_at(%u)\n",
+               g_market_context.expires_at,
+               g_market_context.issued_at);
+        market_context_clear();
+        return false;
+    }
     g_market_context.valid = true;
     if (!mcp_verify_signature(&pctx)) {
         PRINTF("[MCP] Signature verification failed\n");
