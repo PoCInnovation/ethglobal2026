@@ -1,6 +1,7 @@
 import {
 	bytesToHex,
 	ConsensusAggregationByFields,
+	encodeCallMsg,
 	handler,
 	EVMClient,
 	HTTPCapability,
@@ -11,12 +12,13 @@ import {
 	getNetwork,
 	identical,
 	ignore,
+	LAST_FINALIZED_BLOCK_NUMBER,
 	median,
 	Runner,
 	type Runtime,
 	TxStatus,
 } from '@chainlink/cre-sdk'
-import { type Address, encodeFunctionData } from 'viem'
+import { type Address, decodeFunctionResult, encodeFunctionData, zeroAddress } from 'viem'
 import { z } from 'zod'
 import { PolymarketOracleABI } from '../contracts/abi/PolymarketOracle'
 
@@ -38,6 +40,14 @@ interface MarketInfo {
 	active: boolean
 }
 
+interface OnChainMarket {
+	conditionId: string
+	question: string
+	endDate: bigint
+	active: boolean
+	lastUpdate: bigint
+}
+
 // Consensus result: count + serialized market data that all DON nodes must agree on
 interface MarketsFetchResult {
 	count: number
@@ -50,6 +60,66 @@ interface TriggerInput {
 	marketIds: number[]
 }
 
+// ---------------------------------------------------------------------------
+// Step 1: Read on-chain state — which markets already exist in the oracle
+// ---------------------------------------------------------------------------
+const readOnChainMarkets = (
+	runtime: Runtime<Config>,
+	evmClient: EVMClient,
+	conditionIds: string[],
+): Map<string, OnChainMarket> => {
+	const { oracleAddress } = runtime.config
+	const existing = new Map<string, OnChainMarket>()
+
+	for (const cid of conditionIds) {
+		const callData = encodeFunctionData({
+			abi: PolymarketOracleABI,
+			functionName: 'getMarket',
+			args: [cid as `0x${string}`],
+		})
+
+		const resp = evmClient
+			.callContract(runtime, {
+				call: encodeCallMsg({
+					from: zeroAddress,
+					to: oracleAddress as Address,
+					data: callData,
+				}),
+				blockNumber: LAST_FINALIZED_BLOCK_NUMBER,
+			})
+			.result()
+
+		const returnData = bytesToHex(resp.data)
+		if (!returnData || returnData === '0x') continue
+
+		const raw = decodeFunctionResult({
+			abi: PolymarketOracleABI,
+			functionName: 'getMarket',
+			data: returnData as `0x${string}`,
+		})
+
+		// decodeFunctionResult returns the single output directly (the tuple)
+		const decoded = (raw as any)
+		const lastUpdate = BigInt(decoded.lastUpdate ?? decoded[4] ?? 0)
+
+		// lastUpdate == 0 means market doesn't exist on-chain yet
+		if (lastUpdate === 0n) continue
+
+		existing.set(cid, {
+			conditionId: decoded.conditionId ?? decoded[0],
+			question: decoded.question ?? decoded[1],
+			endDate: BigInt(decoded.endDate ?? decoded[2] ?? 0),
+			active: decoded.active ?? decoded[3],
+			lastUpdate,
+		})
+	}
+
+	return existing
+}
+
+// ---------------------------------------------------------------------------
+// Step 2: Fetch from APIs with dual-source validation
+// ---------------------------------------------------------------------------
 const fetchMarkets = (sendRequester: HTTPSendRequester, marketIds: number[]): MarketsFetchResult => {
 	const markets: MarketInfo[] = []
 	const logs: string[] = []
@@ -120,20 +190,39 @@ const fetchMarkets = (sendRequester: HTTPSendRequester, marketIds: number[]): Ma
 	return { count: markets.length, marketsJson, debugLog: logs.join('\n') }
 }
 
-const writeMarketsOnChain = (runtime: Runtime<Config>, markets: MarketInfo[]): string => {
-	const { oracleAddress, chainSelectorName, gasLimit } = runtime.config
+// ---------------------------------------------------------------------------
+// Step 3: Compute delta — only markets that are new or changed
+// ---------------------------------------------------------------------------
+const computeDelta = (
+	fetched: MarketInfo[],
+	onChain: Map<string, OnChainMarket>,
+): MarketInfo[] => {
+	const delta: MarketInfo[] = []
 
-	const network = getNetwork({
-		chainFamily: 'evm',
-		chainSelectorName,
-		isTestnet: true,
-	})
+	for (const m of fetched) {
+		const existing = onChain.get(m.conditionId)
 
-	if (!network) {
-		throw new Error(`Network not found for chain selector: ${chainSelectorName}`)
+		if (!existing) {
+			// New market — not on-chain yet
+			delta.push(m)
+			continue
+		}
+
+		// Check if any field changed
+		const endDateUnix = BigInt(Math.floor(new Date(m.endDate).getTime() / 1000))
+		if (existing.question !== m.question || existing.endDate !== endDateUnix || existing.active !== m.active) {
+			delta.push(m)
+		}
 	}
 
-	const evmClient = new EVMClient(network.chainSelector.selector)
+	return delta
+}
+
+// ---------------------------------------------------------------------------
+// Step 4: Write delta on-chain
+// ---------------------------------------------------------------------------
+const writeMarketsOnChain = (runtime: Runtime<Config>, evmClient: EVMClient, markets: MarketInfo[]): string => {
+	const { oracleAddress, gasLimit } = runtime.config
 
 	const callData = encodeFunctionData({
 		abi: PolymarketOracleABI,
@@ -170,19 +259,27 @@ const writeMarketsOnChain = (runtime: Runtime<Config>, markets: MarketInfo[]): s
 	}
 
 	const txHash = bytesToHex(resp.txHash ?? new Uint8Array(32))
-	runtime.log(`Markets written on-chain: ${txHash}`)
-
 	return txHash
 }
 
+// ---------------------------------------------------------------------------
+// Handler: orchestrates the 4-step pipeline
+// ---------------------------------------------------------------------------
 const onHttpTrigger = (runtime: Runtime<Config>, payload: HTTPPayload): string => {
 	const inputJson = Buffer.from(payload.input).toString('utf-8')
 	const input: TriggerInput = JSON.parse(inputJson)
 
 	runtime.log(`Received request for ${input.marketIds.length} markets: ${input.marketIds.join(', ')}`)
 
-	const httpCapability = new HTTPClient()
+	const { chainSelectorName } = runtime.config
+	const network = getNetwork({ chainFamily: 'evm', chainSelectorName, isTestnet: true })
+	if (!network) throw new Error(`Network not found: ${chainSelectorName}`)
+	const evmClient = new EVMClient(network.chainSelector.selector)
 
+	// --- Step 1: Fetch from APIs with dual-source validation + consensus ---
+	runtime.log(`[Step 1] Fetching markets from Gamma + CLOB APIs...`)
+
+	const httpCapability = new HTTPClient()
 	const result = httpCapability
 		.sendRequest(
 			runtime,
@@ -195,17 +292,41 @@ const onHttpTrigger = (runtime: Runtime<Config>, payload: HTTPPayload): string =
 		)(input.marketIds)
 		.result()
 
-	// Log per-source comparison
-	runtime.log(`--- Source comparison ---`)
-	runtime.log(result.debugLog ?? '(no debug log — field ignored in consensus)')
+	runtime.log(result.debugLog ?? '(debug log not available after consensus)')
 
-	// Parse markets from consensus-verified JSON — all DON nodes agreed on this data
-	const markets: MarketInfo[] = JSON.parse(result.marketsJson)
+	const fetched: MarketInfo[] = JSON.parse(result.marketsJson)
+	runtime.log(`[Step 1] ${fetched.length} markets fetched and cross-source validated`)
 
-	runtime.log(`--- Consensus result (${result.count} markets) ---`)
-	runtime.log(JSON.stringify(markets, null, 2))
+	if (fetched.length === 0) {
+		runtime.log('No markets to process — done')
+		return '0x'
+	}
 
-	const txHash = writeMarketsOnChain(runtime, markets)
+	// --- Step 2: Read current on-chain state ---
+	runtime.log(`[Step 2] Reading on-chain oracle state...`)
+
+	const conditionIds = fetched.map((m) => m.conditionId)
+	const onChain = readOnChainMarkets(runtime, evmClient, conditionIds)
+	runtime.log(`[Step 2] ${onChain.size} markets already on-chain`)
+
+	// --- Step 3: Compute delta ---
+	const delta = computeDelta(fetched, onChain)
+	runtime.log(`[Step 3] Delta: ${delta.length} new/changed markets out of ${fetched.length}`)
+
+	if (delta.length === 0) {
+		runtime.log('All markets up-to-date — no write needed')
+		return '0x'
+	}
+
+	for (const m of delta) {
+		const status = onChain.has(m.conditionId) ? 'UPDATED' : 'NEW'
+		runtime.log(`  ${status}: "${m.question}" (${m.conditionId.slice(0, 10)}...)`)
+	}
+
+	// --- Step 4: Write only the delta on-chain ---
+	runtime.log(`[Step 4] Writing ${delta.length} markets on-chain...`)
+	const txHash = writeMarketsOnChain(runtime, evmClient, delta)
+	runtime.log(`[Step 4] Done — tx: ${txHash}`)
 
 	return txHash
 }
