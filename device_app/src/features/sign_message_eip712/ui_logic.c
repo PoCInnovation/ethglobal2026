@@ -298,6 +298,11 @@ bool ui_712_review_struct(const s_struct_712 *struct_ptr) {
         return false;
     }
 
+    // Skip struct headers when MCP provides clear context and verbose is OFF
+    if (market_context_is_valid() && !N_storage.verbose_eip712) {
+        return true;
+    }
+
     ui_712_set_title(title, strlen(title));
     if ((struct_name = struct_ptr->name) != NULL) {
         ui_712_set_value(struct_name, strlen(struct_name));
