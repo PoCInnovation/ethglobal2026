@@ -1,7 +1,7 @@
 import type { RegisterAgentRequest, TrustchainMember } from "@agent-intents/shared";
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 
-const API_BASE = import.meta.env.DEV ? import.meta.env.VITE_BACKEND_URL || "" : "";
+const API_BASE = "";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 	const res = await fetch(url, { credentials: "include", ...init });

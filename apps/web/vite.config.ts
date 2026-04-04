@@ -20,15 +20,12 @@ export default defineConfig(({ command, mode }) => {
 			},
 		},
 		server: {
-			proxy:
-				backendUrl && backendUrl.length > 0
-					? {
-							"/api": {
-								target: backendUrl,
-								changeOrigin: true,
-							},
-						}
-					: undefined,
+			proxy: {
+				"/api": {
+					target: backendUrl || "http://localhost:3005",
+					changeOrigin: true,
+				},
+			},
 		},
 	};
 });

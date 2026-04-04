@@ -11,6 +11,7 @@ import {
 import { useUpdateIntentStatus } from "@/queries/intents";
 import {
 	type Intent,
+	type PolymarketTradeDetails,
 	type TransferIntent,
 	SUPPORTED_CHAINS,
 	SUPPORTED_TOKENS,
@@ -19,8 +20,8 @@ import {
 	isPolymarketTrade,
 	isTransferIntent,
 } from "@agent-intents/shared";
-import { buildPolymarketOrderTypedData } from "@/lib/polymarket";
-import type { PolymarketTradeDetails } from "@agent-intents/shared";
+import { buildOrderFromIntent, simulateOrder } from "@/lib/polymarket-order";
+import { checkPolymarketConnection, submitSignedOrder } from "@/lib/polymarket-submit";
 import { Button } from "@ledgerhq/lumen-ui-react";
 import { useState } from "react";
 import { verifyTypedData } from "viem";
@@ -303,7 +304,7 @@ function IntentRow({ intent, onSelectIntent }: IntentRowProps) {
 	const handleSign = async () => {
 		setError(null);
 
-		// Polymarket path: build EIP-712 Order and sign via signTypedDataV4
+		// Polymarket path: build EIP-712 order, sign on Ledger
 		// Chain validation is skipped: chainId is in the EIP-712 domain.
 		if (isPolymarket) {
 			if (!account) {
@@ -315,14 +316,41 @@ function IntentRow({ intent, onSelectIntent }: IntentRowProps) {
 				setError("Market data incomplete (missing tokenId)");
 				return;
 			}
+			// Check Polymarket credentials before signing
+			const connected = await checkPolymarketConnection();
+			if (!connected) {
+				setError("Connect to Polymarket first (Settings > Polymarket)");
+				return;
+			}
 			setIsSigning(true);
 			try {
-				const typedData = buildPolymarketOrderTypedData(polyDetails, account);
-				const signature = await signTypedDataV4(typedData);
+				// Step 1: Simulate — fetch latest price + negRisk from Gamma API
+				console.log("[Polymarket] Step 1: Simulating order...");
+				const simulation = await simulateOrder(polyDetails.tokenId);
+				console.log("[Polymarket] Simulation:", simulation);
+
+				// Step 2: Build EIP-712 order with fresh price and correct domain
+				console.log("[Polymarket] Step 2: Building order...");
+				const order = buildOrderFromIntent(polyDetails, account, simulation);
+				console.log("[Polymarket] Order built:", order.message);
+
+				// Step 3: Sign on Ledger (MCP context is sent automatically)
+				console.log("[Polymarket] Step 3: Signing on Ledger...");
+				const signature = await signTypedDataV4(order);
+				console.log("[Polymarket] Step 3 complete — signature:", signature);
+
+				// Step 4: Submit to CLOB
+				console.log("[Polymarket] Step 4: Submitting to CLOB...");
+				const result = await submitSignedOrder(order.message, signature, account);
+				if (!result.success) {
+					throw new Error(result.errorMsg || "CLOB submission failed");
+				}
+				console.log("[Polymarket] Step 4 complete — order placed:", result);
+
 				await updateStatus.mutateAsync({
 					id: intent.id,
-					status: "authorized",
-					note: `polymarket_order_signature:${signature}`,
+					status: "confirmed",
+					note: `Polymarket order placed (orderID: ${result.orderID ?? "unknown"})`,
 				});
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : "Signing failed";

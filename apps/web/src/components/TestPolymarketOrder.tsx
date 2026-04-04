@@ -10,9 +10,10 @@ import { useLedger } from "@/lib/ledger-provider";
 function buildTestOrder(walletAddress: string) {
 	return {
 		domain: {
-			name: "ClobAuthDomain",
+			name: "Polymarket CTF Exchange",
 			version: "1",
 			chainId: 137,
+			verifyingContract: "0xC5d563A36AE78145C45a50134d48A1215220f80a", // negRisk exchange
 		},
 		primaryType: "Order" as const,
 		types: {
@@ -20,6 +21,7 @@ function buildTestOrder(walletAddress: string) {
 				{ name: "name", type: "string" },
 				{ name: "version", type: "string" },
 				{ name: "chainId", type: "uint256" },
+				{ name: "verifyingContract", type: "address" },
 			],
 			Order: [
 				{ name: "salt", type: "uint256" },
@@ -37,7 +39,7 @@ function buildTestOrder(walletAddress: string) {
 			],
 		},
 		message: {
-			salt: String(Math.floor(Math.random() * 1_000_000)),
+			salt: String(Math.round(Math.random() * Date.now())),
 			maker: walletAddress,
 			signer: walletAddress,
 			taker: "0x0000000000000000000000000000000000000000",

@@ -70,6 +70,42 @@ function HistoryIcon({ className }: { className?: string }) {
 	);
 }
 
+function PortfolioIcon({ className }: { className?: string }) {
+	return (
+		<svg
+			aria-hidden="true"
+			width="20"
+			height="20"
+			viewBox="0 0 20 20"
+			fill="none"
+			xmlns="http://www.w3.org/2000/svg"
+			className={className}
+		>
+			<path
+				d="M16.25 17.5V7.5"
+				stroke="currentColor"
+				strokeWidth="1.5"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+			<path
+				d="M11.25 17.5V2.5"
+				stroke="currentColor"
+				strokeWidth="1.5"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+			<path
+				d="M6.25 17.5V10"
+				stroke="currentColor"
+				strokeWidth="1.5"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+		</svg>
+	);
+}
+
 function DocsIcon({ className }: { className?: string }) {
 	return (
 		<svg
@@ -195,6 +231,7 @@ type NavItem = {
 const mainNavItems: NavItem[] = [
 	{ id: "home", label: "Review Intents", icon: HomeIcon, path: "/" },
 	{ id: "history", label: "Transaction History", icon: HistoryIcon, path: "/history" },
+	{ id: "portfolio", label: "Portfolio", icon: PortfolioIcon, path: "/portfolio" },
 	{
 		id: "agent-context",
 		label: "Context for Agents",

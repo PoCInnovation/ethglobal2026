@@ -14,6 +14,7 @@
 #include "network.h"
 #include "time_format.h"
 #include "features/provide_market_context/market_context.h"
+#include "features/provide_market_context/auth_context.h"
 #include "lists.h"
 #include "ui_utils.h"
 #include "utils.h"
@@ -133,8 +134,8 @@ static bool ui_712_field_shown(void) {
 
     if (ui_ctx->filtering_mode == EIP712_FILTERING_BASIC) {
 #ifdef SCREEN_SIZE_WALLET
-        // If MCP context is valid and verbose is OFF, skip raw fields
-        if (market_context_is_valid() && !N_storage.verbose_eip712) {
+        // If MCP/auth context is valid and verbose is OFF, skip raw fields
+        if ((market_context_is_valid() || auth_context_is_valid()) && !N_storage.verbose_eip712) {
             ret = false;
         } else {
             ret = true;
@@ -261,7 +262,7 @@ void ui_712_set_value(const char *str, size_t length) {
 bool ui_712_redraw_generic_step(void) {
     if (appState != APP_STATE_SIGNING_EIP712) {  // Initialize if it is not already
         if ((ui_ctx->filtering_mode == EIP712_FILTERING_BASIC) && !N_storage.dataAllowed &&
-            !N_storage.verbose_eip712 && !market_context_is_valid()) {
+            !N_storage.verbose_eip712 && !market_context_is_valid() && !auth_context_is_valid()) {
             // No blind signing, no verbose, no MCP context => Error
             ui_error_blind_signing();
             apdu_response_code = SWO_INCORRECT_DATA;
@@ -299,7 +300,7 @@ bool ui_712_review_struct(const s_struct_712 *struct_ptr) {
     }
 
     // Skip struct header UI but still drive the state machine forward
-    if (market_context_is_valid() && !N_storage.verbose_eip712) {
+    if ((market_context_is_valid() || auth_context_is_valid()) && !N_storage.verbose_eip712) {
         return ui_712_redraw_generic_step();
     }
 
@@ -1054,29 +1055,53 @@ static s_ui_712_pair *mcp_alloc_pair(const char *key, const char *value) {
 static void ui_712_inject_mcp_screens(void) {
     if (!market_context_is_valid()) return;
 
-    // Build chain: Market -> Outcome -> Shares -> Price/Share -> Total
+    // Build chain: Market -> Outcome -> Total -> Shares -> Price/Share
+    // (money-first: user sees market, side, and USDC amount in first 3 screens)
     s_ui_712_pair *market = mcp_alloc_pair("Market", g_market_context.market_name);
     s_ui_712_pair *outcome = mcp_alloc_pair("Outcome", g_market_context.market_outcome);
+    s_ui_712_pair *amount = mcp_alloc_pair("Total", g_market_context.market_amount);
     s_ui_712_pair *shares = mcp_alloc_pair("Shares", g_market_context.market_shares);
     s_ui_712_pair *price = mcp_alloc_pair("Price/Share", g_market_context.market_price);
-    s_ui_712_pair *amount = mcp_alloc_pair("Total", g_market_context.market_amount);
 
-    if (!market || !outcome || !shares || !price || !amount) {
+    if (!market || !outcome || !amount || !shares || !price) {
         PRINTF("[MCP] Failed to allocate MCP UI pairs\n");
         return;
     }
 
     // Link the chain
     ((flist_node_t *) market)->next = (flist_node_t *) outcome;
-    ((flist_node_t *) outcome)->next = (flist_node_t *) shares;
+    ((flist_node_t *) outcome)->next = (flist_node_t *) amount;
+    ((flist_node_t *) amount)->next = (flist_node_t *) shares;
     ((flist_node_t *) shares)->next = (flist_node_t *) price;
-    ((flist_node_t *) price)->next = (flist_node_t *) amount;
 
     // Prepend to existing list
-    ((flist_node_t *) amount)->next = (flist_node_t *) ui_ctx->ui_pairs;
+    ((flist_node_t *) price)->next = (flist_node_t *) ui_ctx->ui_pairs;
     ui_ctx->ui_pairs = market;
 
     PRINTF("[MCP] Injected 5 MCP UI screens at front\n");
+}
+
+/**
+ * Inject auth context screens (Service + Address) at the BEGINNING of the
+ * EIP-712 UI pair list for ClobAuth clear signing.
+ */
+static void ui_712_inject_auth_screens(void) {
+    if (!auth_context_is_valid()) return;
+
+    s_ui_712_pair *service = mcp_alloc_pair("Service", g_auth_context.auth_label);
+    s_ui_712_pair *address = mcp_alloc_pair("Address", g_auth_context.auth_address);
+
+    if (!service || !address) {
+        PRINTF("[AUTH] Failed to allocate auth UI pairs\n");
+        return;
+    }
+
+    // Link: Service -> Address -> existing pairs
+    ((flist_node_t *) service)->next = (flist_node_t *) address;
+    ((flist_node_t *) address)->next = (flist_node_t *) ui_ctx->ui_pairs;
+    ui_ctx->ui_pairs = service;
+
+    PRINTF("[AUTH] Injected 2 auth UI screens at front\n");
 }
 
 /**
@@ -1091,12 +1116,13 @@ void ui_712_end_sign(void) {
 
     // Inject MCP market context screens at the front of the review
     ui_712_inject_mcp_screens();
+    ui_712_inject_auth_screens();
 
 #ifdef SCREEN_SIZE_WALLET
     if (true) {
 #else
     if (N_storage.verbose_eip712 || (ui_ctx->filtering_mode == EIP712_FILTERING_FULL) ||
-        market_context_is_valid()) {
+        market_context_is_valid() || auth_context_is_valid()) {
 #endif
         ui_ctx->end_reached = true;
         apdu_response_code = ui_sign_712(ui_ctx->filtering_mode);

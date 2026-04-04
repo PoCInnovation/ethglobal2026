@@ -155,10 +155,14 @@ export async function enrichPolymarketIntent(
 		throw new Error(validationError);
 	}
 
-	const outcomeIndex = details.outcome === "Yes" ? 0 : 1;
-	const outcomeToken = market.tokens?.[outcomeIndex];
+	// Resolve token IDs for both outcomes
+	const yesToken = market.tokens?.find((t) => t.outcome === "Yes");
+	const noToken = market.tokens?.find((t) => t.outcome === "No");
+	const outcomeTokenIds =
+		yesToken && noToken ? { yes: yesToken.token_id, no: noToken.token_id } : undefined;
+	const tokenId = details.outcome === "Yes" ? yesToken?.token_id : noToken?.token_id;
+	const outcomeToken = details.outcome === "Yes" ? yesToken : noToken;
 	const outcomePrice = outcomeToken?.price ?? undefined;
-	const tokenId = outcomeToken?.token_id ?? undefined;
 
 	logger.info(
 		{ conditionId: details.conditionId, marketTitle: market.question, outcomePrice, tokenId, source: market.source },
@@ -170,5 +174,6 @@ export async function enrichPolymarketIntent(
 		marketTitle: market.question,
 		outcomePrice,
 		tokenId,
+		outcomeTokenIds,
 	};
 }

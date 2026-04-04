@@ -1,6 +1,7 @@
 #include "apdu_constants.h"  // APDU response codes
 #include "context_712.h"
 #include "features/provide_market_context/market_context.h"
+#include "features/provide_market_context/auth_context.h"
 #include "field_hash.h"
 #include "path.h"
 #include "ui_logic.h"
@@ -323,6 +324,19 @@ uint16_t handle_eip712_sign(const uint8_t *cdata, uint8_t length, uint32_t *flag
                               INT256_LENGTH) != 0) {
                 PRINTF("[MCP] tokenId mismatch between MCP and EIP-712 message\n");
                 market_context_clear();
+                apdu_response_code = SWO_INCORRECT_DATA;
+                ret = false;
+            }
+        }
+
+        // Auth binding: if auth context was provided, verify chainId matches
+        if (auth_context_is_valid()) {
+            if (eip712_context != NULL &&
+                g_auth_context.chain_id != eip712_context->chain_id) {
+                PRINTF("[AUTH] chain_id mismatch: AUTH=%llu EIP712=%llu\n",
+                       (unsigned long long) g_auth_context.chain_id,
+                       (unsigned long long) eip712_context->chain_id);
+                auth_context_clear();
                 apdu_response_code = SWO_INCORRECT_DATA;
                 ret = false;
             }
