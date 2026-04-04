@@ -176,6 +176,8 @@ export interface PolymarketTradeDetails {
 	outcome: "Yes" | "No";
 	amount: string; // USDC amount (human-readable, e.g. "50")
 	outcomePrice?: number; // Current price (e.g. 0.65), enriched by backend
+	tokenId?: string; // Resolved outcome token ID (uint256 decimal string)
+	outcomeTokenIds?: { yes: string; no: string }; // Both token IDs from Gamma API
 	chainId: 137; // Polygon
 	memo?: string; // Agent justification
 }

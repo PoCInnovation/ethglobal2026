@@ -39,7 +39,7 @@ import {
 	createPublicClient,
 	serializeTransaction,
 } from "viem";
-import { base, baseSepolia, sepolia } from "viem/chains";
+import { base, baseSepolia, polygon, sepolia } from "viem/chains";
 import {
 	isPolymarketOrder,
 	buildPolymarketContext,
@@ -169,16 +169,17 @@ function isWebBluetoothAvailable(): boolean {
 // =============================================================================
 
 const CHAIN_MAP: Record<number, Chain> = {
+	137: polygon,
 	8453: base,
 	84532: baseSepolia,
 	11155111: sepolia,
 };
 
-// Default chain: Base mainnet
-const DEFAULT_CHAIN_ID = 8453;
+// Default chain: Polygon (for Polymarket)
+const DEFAULT_CHAIN_ID = 137;
 
 function getChain(chainId: number): Chain {
-	return CHAIN_MAP[chainId] ?? base;
+	return CHAIN_MAP[chainId] ?? polygon;
 }
 
 function getRpcUrl(chainId: number): string {
@@ -744,8 +745,8 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 		) {
 			const currentApp = (readyState as { currentApp?: { name: string } }).currentApp;
 			console.log("[ensureEthereumApp] currentApp:", currentApp?.name);
-			if (currentApp?.name === "Polymarket") {
-				console.log("[ensureEthereumApp] Polymarket app already open — skipping OpenApp");
+			if (currentApp?.name === "Polyledger") {
+				console.log("[ensureEthereumApp] Polyledger app already open — skipping OpenApp");
 				return true;
 			}
 		}
@@ -753,10 +754,10 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 		// ---------------------------------------------------------------
 		// Step 3: App is not open — use OpenAppDeviceAction (no catalog check).
 		// ---------------------------------------------------------------
-		console.log("[ensureEthereumApp] opening Polymarket app via OpenAppDeviceAction");
+		console.log("[ensureEthereumApp] opening Polyledger app via OpenAppDeviceAction");
 		const openAppAction = new OpenAppDeviceAction({
 			input: {
-				appName: "Polymarket",
+				appName: "Polyledger",
 			},
 		});
 

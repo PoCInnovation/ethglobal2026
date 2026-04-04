@@ -298,9 +298,9 @@ bool ui_712_review_struct(const s_struct_712 *struct_ptr) {
         return false;
     }
 
-    // Skip struct headers when MCP provides clear context and verbose is OFF
+    // Skip struct header UI but still drive the state machine forward
     if (market_context_is_valid() && !N_storage.verbose_eip712) {
-        return true;
+        return ui_712_redraw_generic_step();
     }
 
     ui_712_set_title(title, strlen(title));

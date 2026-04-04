@@ -28,8 +28,13 @@ typedef struct {
 // Global MCP state
 extern market_context_t g_market_context;
 
+// Set when a new MCP APDU is received; consumed by eip712_context_init
+// so that stale context from a previous signing is cleared.
+extern bool g_market_context_fresh;
+
 void market_context_clear(void);
 bool market_context_is_valid(void);
+void market_context_consume_or_clear(void);
 
 // Storage for tokenId extracted from EIP-712 message during parsing.
 // Used to bind MCP context to the actual signed message.

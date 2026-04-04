@@ -666,6 +666,61 @@ app.post("/api/market-context/sign", (req, res) => {
 	res.json({ payload: payload.toString("hex") });
 });
 
+// ============ Polymarket CLOB Credentials ============
+
+interface PolymarketCredentials {
+	apiKey: string;
+	secret: string;
+	passphrase: string;
+}
+const polymarketCreds = new Map<string, PolymarketCredentials>();
+
+// Save credentials (after user derives API key via Ledger signature)
+app.post("/api/polymarket/credentials", (req, res) => {
+	const cookies = parseCookies(req.headers.cookie);
+	const sessionId = cookies[SESSION_COOKIE_NAME];
+	const session = sessionId ? authSessions.get(sessionId) : undefined;
+	if (!session || session.expiresAt < Date.now()) {
+		res.status(401).json({ success: false, error: "Authentication required" });
+		return;
+	}
+	const { apiKey, secret, passphrase } = req.body as Partial<PolymarketCredentials>;
+	if (!apiKey || !secret || !passphrase) {
+		res.status(400).json({ success: false, error: "Missing apiKey, secret, or passphrase" });
+		return;
+	}
+	polymarketCreds.set(session.walletAddress, { apiKey, secret, passphrase });
+	console.log(`[Polymarket] Credentials saved for ${session.walletAddress}`);
+	res.json({ success: true });
+});
+
+// Check if credentials exist for the authenticated user
+app.get("/api/polymarket/credentials", (req, res) => {
+	const cookies = parseCookies(req.headers.cookie);
+	const sessionId = cookies[SESSION_COOKIE_NAME];
+	const session = sessionId ? authSessions.get(sessionId) : undefined;
+	if (!session || session.expiresAt < Date.now()) {
+		res.status(401).json({ success: false, error: "Authentication required" });
+		return;
+	}
+	const creds = polymarketCreds.get(session.walletAddress);
+	res.json({ success: true, connected: !!creds });
+});
+
+// Delete credentials
+app.delete("/api/polymarket/credentials", (req, res) => {
+	const cookies = parseCookies(req.headers.cookie);
+	const sessionId = cookies[SESSION_COOKIE_NAME];
+	const session = sessionId ? authSessions.get(sessionId) : undefined;
+	if (!session || session.expiresAt < Date.now()) {
+		res.status(401).json({ success: false, error: "Authentication required" });
+		return;
+	}
+	polymarketCreds.delete(session.walletAddress);
+	console.log(`[Polymarket] Credentials removed for ${session.walletAddress}`);
+	res.json({ success: true });
+});
+
 // ============ Demo/Debug ============
 
 // List all intents (debug endpoint)
