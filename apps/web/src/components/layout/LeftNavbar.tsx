@@ -229,8 +229,7 @@ type NavItem = {
 };
 
 const mainNavItems: NavItem[] = [
-	{ id: "home", label: "Review Intents", icon: HomeIcon, path: "/" },
-	{ id: "history", label: "Transaction History", icon: HistoryIcon, path: "/history" },
+	{ id: "home", label: "Proposals", icon: HomeIcon, path: "/" },
 	{ id: "portfolio", label: "Portfolio", icon: PortfolioIcon, path: "/portfolio" },
 	{
 		id: "agent-context",
@@ -282,8 +281,8 @@ function NavButton({ item, isActive, onClick }: NavButtonProps) {
 
 /** Get the nav item ID from the current pathname */
 function getActiveItemFromPath(pathname: string): string {
-	if (pathname === "/") return "home";
-	if (pathname.startsWith("/history")) return "history";
+	if (pathname === "/" || pathname.startsWith("/history")) return "home";
+	if (pathname.startsWith("/portfolio")) return "portfolio";
 	if (pathname.startsWith("/agent-context")) return "agent-context";
 	if (pathname.startsWith("/docs")) return "api-docs";
 	if (pathname.startsWith("/settings")) return "settings";

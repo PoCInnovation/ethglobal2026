@@ -72,8 +72,8 @@ function HistoryPage() {
 		<div className="flex flex-col gap-32">
 			{/* Page header */}
 			<div className="flex flex-col gap-8 text-center">
-				<h1 className="heading-0-semi-bold text-base">Transaction History</h1>
-				<p className="body-1 text-muted">View your signed and completed transactions</p>
+				<h1 className="heading-0-semi-bold text-base">Proposal History</h1>
+				<p className="body-1 text-muted">View your past agent proposals and transactions</p>
 			</div>
 
 			{/* Stats Tiles */}
@@ -102,7 +102,7 @@ function HistoryPage() {
 			{/* Content */}
 			{!isConnected ? (
 				<div className="rounded-lg bg-surface border border-muted p-24 text-center">
-					<p className="body-1 text-muted">Connect your Ledger to view transaction history</p>
+					<p className="body-1 text-muted">Connect your Ledger to view proposal history</p>
 				</div>
 			) : authStatus === "checking" ||
 				authStatus === "authing" ||
@@ -129,8 +129,8 @@ function HistoryPage() {
 				</div>
 			) : !completedIntents || completedIntents.length === 0 ? (
 				<div className="rounded-lg bg-surface border border-muted p-24 text-center">
-					<p className="body-1 text-muted">No transactions yet</p>
-					<p className="body-2 text-muted-subtle mt-8">Transactions you sign will appear here</p>
+					<p className="body-1 text-muted">No proposals yet</p>
+					<p className="body-2 text-muted-subtle mt-8">Proposals you review will appear here</p>
 				</div>
 			) : (
 				<div className="flex flex-col gap-8">
