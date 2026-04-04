@@ -9,6 +9,7 @@ import {
 } from "@/lib/agent-keys";
 import { useLedger } from "@/lib/ledger-provider";
 import { usePolymarketAuth } from "@/lib/polymarket-auth";
+import { useWalletAuth } from "@/lib/wallet-auth";
 import { cn, formatAddress, formatTimeAgo } from "@/lib/utils";
 import { agentsQueryOptions, useRegisterAgent, useRevokeAgent } from "@/queries/agents";
 import type { TrustchainMember } from "@agent-intents/shared";
@@ -132,7 +133,9 @@ function SettingsPage() {
 
 function PolymarketConnectionSection() {
 	const { isConnected } = useLedger();
+	const { status: authStatus } = useWalletAuth();
 	const { isPolyConnected, isLoading, error, connect, disconnect } = usePolymarketAuth();
+	const isAuthed = authStatus === "authed";
 
 	return (
 		<div className="flex flex-col gap-16">
@@ -158,13 +161,17 @@ function PolymarketConnectionSection() {
 						</div>
 					)}
 
+					{isConnected && !isAuthed && (
+						<p className="body-3 text-muted">Authenticating wallet session... Please sign on your Ledger if prompted.</p>
+					)}
+
 					<div className="flex gap-12">
 						{!isPolyConnected ? (
 							<Button
 								appearance="accent"
 								size="md"
 								onClick={connect}
-								disabled={!isConnected || isLoading}
+								disabled={!isAuthed || isLoading}
 							>
 								{isLoading ? "Signing on Ledger..." : "Connect to Polymarket"}
 							</Button>

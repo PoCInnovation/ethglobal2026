@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLedger } from "./ledger-provider";
 
-// Use same-origin API in production (Vercel); allow override in development only.
-const API_BASE = import.meta.env.DEV ? import.meta.env.VITE_BACKEND_URL || "" : "";
+// All API calls go through the Vite proxy in dev (same-origin, no cookie issues).
+const API_BASE = "";
 
 /** Maximum number of automatic retry attempts before giving up. */
 const MAX_AUTO_RETRIES = 3;

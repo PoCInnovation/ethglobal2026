@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useLedger } from "./ledger-provider";
 
 const CLOB_API = "https://clob.polymarket.com";
-const API_BASE = import.meta.env.DEV ? import.meta.env.VITE_BACKEND_URL || "" : "";
+const API_BASE = "";
 
 // ---------- L1 EIP-712 auth types (Polymarket ClobAuth) ----------
 

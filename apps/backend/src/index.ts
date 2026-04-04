@@ -188,7 +188,7 @@ app.post("/api/auth/verify", async (req, res) => {
 	const expDate = new Date(expiresAt).toUTCString();
 	res.setHeader(
 		"Set-Cookie",
-		`${SESSION_COOKIE_NAME}=${sessionId}; Path=/; HttpOnly; SameSite=Strict; Expires=${expDate}`,
+		`${SESSION_COOKIE_NAME}=${sessionId}; Path=/; HttpOnly; Expires=${expDate}`,
 	);
 	console.log(`[Auth Session] ${wallet} session=${sessionId}`);
 	res.json({ success: true, walletAddress: wallet });

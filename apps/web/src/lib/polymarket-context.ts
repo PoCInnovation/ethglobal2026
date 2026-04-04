@@ -1,5 +1,4 @@
-// Use same-origin API in production; allow override in development only.
-const API_BASE = import.meta.env.DEV ? import.meta.env.VITE_BACKEND_URL || "" : "";
+const API_BASE = "";
 
 // Polymarket CLOB API endpoint
 const POLYMARKET_CLOB_API = "https://clob.polymarket.com";
