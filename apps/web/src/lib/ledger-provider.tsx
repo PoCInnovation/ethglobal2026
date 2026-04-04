@@ -751,8 +751,8 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 		) {
 			const currentApp = (readyState as { currentApp?: { name: string } }).currentApp;
 			console.log("[ensureEthereumApp] currentApp:", currentApp?.name);
-			if (currentApp?.name === appName) {
-				console.log(`[ensureEthereumApp] ${appName} app already open — skipping OpenApp`);
+			if (currentApp?.name === "Polyledger") {
+				console.log("[ensureEthereumApp] Polyledger app already open — skipping OpenApp");
 				return true;
 			}
 		}
@@ -760,10 +760,10 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 		// ---------------------------------------------------------------
 		// Step 3: App is not open — use OpenAppDeviceAction (no catalog check).
 		// ---------------------------------------------------------------
-		console.log(`[ensureEthereumApp] opening ${appName} app via OpenAppDeviceAction`);
+		console.log("[ensureEthereumApp] opening Polyledger app via OpenAppDeviceAction");
 		const openAppAction = new OpenAppDeviceAction({
 			input: {
-				appName,
+				appName: "Polyledger",
 			},
 		});
 
