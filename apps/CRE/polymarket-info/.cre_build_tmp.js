@@ -11515,6 +11515,12 @@ function simpleDescriptor(agg) {
 function median() {
   return new ConsensusFieldAggregation(simpleDescriptor(AggregationType.MEDIAN));
 }
+function identical() {
+  return new ConsensusFieldAggregation(simpleDescriptor(AggregationType.IDENTICAL));
+}
+function ignore() {
+  return new ConsensusFieldAggregation;
+}
 
 class ConsensusFieldAggregation {
   fieldDescriptor;
@@ -16479,6 +16485,25 @@ var PolymarketOracleABI = [
     outputs: []
   },
   {
+    name: "updateMarketsDirect",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "incoming",
+        type: "tuple[]",
+        components: [
+          { name: "conditionId", type: "bytes32" },
+          { name: "question", type: "string" },
+          { name: "endDate", type: "uint256" },
+          { name: "active", type: "bool" },
+          { name: "lastUpdate", type: "uint256" }
+        ]
+      }
+    ],
+    outputs: []
+  },
+  {
     name: "getMarket",
     type: "function",
     stateMutability: "view",
@@ -16526,6 +16551,13 @@ var PolymarketOracleABI = [
     outputs: [{ name: "", type: "bytes10" }]
   },
   {
+    name: "ADMIN",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }]
+  },
+  {
     name: "MarketsUpdated",
     type: "event",
     anonymous: false,
@@ -16549,38 +16581,77 @@ var PolymarketOracleABI = [
       { name: "received", type: "bytes10" },
       { name: "expected", type: "bytes10" }
     ]
+  },
+  {
+    name: "Unauthorized",
+    type: "error",
+    inputs: []
   }
 ];
 var GAMMA_API_BASE = "https://gamma-api.polymarket.com/markets";
+var CLOB_API_BASE = "https://clob.polymarket.com/markets";
 var configSchema = exports_external.object({
   oracleAddress: exports_external.string(),
   chainSelectorName: exports_external.string(),
   gasLimit: exports_external.string()
 });
-var cachedMarkets = [];
 var fetchMarkets = (sendRequester, marketIds) => {
   const markets = [];
-  for (const id of marketIds) {
-    const url = `${GAMMA_API_BASE}/${id}`;
-    const response = sendRequester.sendRequest({ method: "GET", url }).result();
-    if (response.statusCode === 404)
+  const logs = [];
+  const sortedIds = [...marketIds].sort((a, b) => a - b);
+  for (const id of sortedIds) {
+    const gammaUrl = `${GAMMA_API_BASE}/${id}`;
+    const gammaResp = sendRequester.sendRequest({ method: "GET", url: gammaUrl }).result();
+    if (gammaResp.statusCode === 404) {
+      logs.push(`[${id}] Gamma: 404 (skipped)`);
       continue;
-    if (response.statusCode !== 200) {
-      throw new Error(`HTTP request failed for market ${id}: ${response.statusCode}`);
     }
-    const responseText = Buffer.from(response.body).toString("utf-8");
-    const m = JSON.parse(responseText);
-    if (!m.conditionId)
+    if (gammaResp.statusCode !== 200) {
+      throw new Error(`Gamma API failed for market ${id}: ${gammaResp.statusCode}`);
+    }
+    const gamma = JSON.parse(Buffer.from(gammaResp.body).toString("utf-8"));
+    if (!gamma.conditionId) {
+      logs.push(`[${id}] Gamma: no conditionId (skipped)`);
       continue;
+    }
+    logs.push(`[${id}] Gamma: conditionId=${gamma.conditionId}, question="${gamma.question}", endDate=${gamma.endDate}, active=${gamma.active}`);
+    const clobUrl = `${CLOB_API_BASE}/${gamma.conditionId}`;
+    const clobResp = sendRequester.sendRequest({ method: "GET", url: clobUrl }).result();
+    if (clobResp.statusCode === 404) {
+      logs.push(`[${id}] CLOB: 404 (skipped)`);
+      continue;
+    }
+    if (clobResp.statusCode !== 200) {
+      throw new Error(`CLOB API failed for condition ${gamma.conditionId}: ${clobResp.statusCode}`);
+    }
+    const clob = JSON.parse(Buffer.from(clobResp.body).toString("utf-8"));
+    logs.push(`[${id}] CLOB:  conditionId=${clob.condition_id}, question="${clob.question}", endDate=${clob.end_date_iso}, active=${clob.active}`);
+    if (clob.condition_id !== gamma.conditionId) {
+      throw new Error(`Source mismatch for market ${id}: conditionId differs (gamma=${gamma.conditionId}, clob=${clob.condition_id})`);
+    }
+    if (clob.question !== gamma.question) {
+      throw new Error(`Source mismatch for market ${id}: question differs`);
+    }
+    const gammaDate = gamma.endDate.split("T")[0];
+    const clobDate = clob.end_date_iso.split("T")[0];
+    if (gammaDate !== clobDate) {
+      throw new Error(`Source mismatch for market ${id}: endDate differs (gamma=${gamma.endDate}, clob=${clob.end_date_iso})`);
+    }
+    if (clob.active !== gamma.active) {
+      throw new Error(`Source mismatch for market ${id}: active differs (gamma=${gamma.active}, clob=${clob.active})`);
+    }
+    logs.push(`[${id}] ✓ Cross-source validated`);
     markets.push({
-      conditionId: m.conditionId,
-      question: m.question,
-      endDate: m.endDate,
-      active: m.active
+      conditionId: gamma.conditionId,
+      question: gamma.question,
+      endDate: gamma.endDate,
+      active: gamma.active
     });
   }
-  cachedMarkets = markets;
-  return { count: markets.length };
+  const sorted = markets.sort((a, b) => a.conditionId.localeCompare(b.conditionId));
+  const marketsJson = JSON.stringify(sorted);
+  return { count: markets.length, marketsJson, debugLog: logs.join(`
+`) };
 };
 var writeMarketsOnChain = (runtime2, markets) => {
   const { oracleAddress, chainSelectorName, gasLimit } = runtime2.config;
@@ -16629,10 +16700,14 @@ var onHttpTrigger = (runtime2, payload) => {
   runtime2.log(`Received request for ${input.marketIds.length} markets: ${input.marketIds.join(", ")}`);
   const httpCapability = new ClientCapability2;
   const result = httpCapability.sendRequest(runtime2, fetchMarkets, ConsensusAggregationByFields({
-    count: median
+    count: median,
+    marketsJson: identical,
+    debugLog: ignore
   }))(input.marketIds).result();
-  const markets = cachedMarkets;
-  runtime2.log(`Fetched ${result.count} markets, writing on-chain...`);
+  runtime2.log(`--- Source comparison ---`);
+  runtime2.log(result.debugLog ?? "(no debug log — field ignored in consensus)");
+  const markets = JSON.parse(result.marketsJson);
+  runtime2.log(`--- Consensus result (${result.count} markets) ---`);
   runtime2.log(JSON.stringify(markets, null, 2));
   const txHash = writeMarketsOnChain(runtime2, markets);
   return txHash;

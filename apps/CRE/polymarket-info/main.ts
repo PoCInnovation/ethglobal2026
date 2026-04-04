@@ -9,6 +9,8 @@ import {
 	type HTTPPayload,
 	hexToBase64,
 	getNetwork,
+	identical,
+	ignore,
 	median,
 	Runner,
 	type Runtime,
@@ -19,6 +21,7 @@ import { z } from 'zod'
 import { PolymarketOracleABI } from '../contracts/abi/PolymarketOracle'
 
 const GAMMA_API_BASE = 'https://gamma-api.polymarket.com/markets'
+const CLOB_API_BASE = 'https://clob.polymarket.com/markets'
 
 const configSchema = z.object({
 	oracleAddress: z.string(),
@@ -35,8 +38,11 @@ interface MarketInfo {
 	active: boolean
 }
 
+// Consensus result: count + serialized market data that all DON nodes must agree on
 interface MarketsFetchResult {
 	count: number
+	marketsJson: string // deterministic JSON — consensus via `identical` ensures all nodes agree
+	debugLog: string // per-market source comparison, ignored in consensus
 }
 
 // Input payload from the HTTP trigger
@@ -44,36 +50,74 @@ interface TriggerInput {
 	marketIds: number[]
 }
 
-// Module-level cache populated as a side effect of fetchMarkets
-let cachedMarkets: MarketInfo[] = []
-
 const fetchMarkets = (sendRequester: HTTPSendRequester, marketIds: number[]): MarketsFetchResult => {
 	const markets: MarketInfo[] = []
+	const logs: string[] = []
 
-	for (const id of marketIds) {
-		const url = `${GAMMA_API_BASE}/${id}`
-		const response = sendRequester.sendRequest({ method: 'GET', url }).result()
+	// Sort market IDs for deterministic ordering across all DON nodes
+	const sortedIds = [...marketIds].sort((a, b) => a - b)
 
-		if (response.statusCode === 404) continue // market not found, skip
-		if (response.statusCode !== 200) {
-			throw new Error(`HTTP request failed for market ${id}: ${response.statusCode}`)
+	for (const id of sortedIds) {
+		// --- Source 1: Gamma API ---
+		const gammaUrl = `${GAMMA_API_BASE}/${id}`
+		const gammaResp = sendRequester.sendRequest({ method: 'GET', url: gammaUrl }).result()
+
+		if (gammaResp.statusCode === 404) { logs.push(`[${id}] Gamma: 404 (skipped)`); continue }
+		if (gammaResp.statusCode !== 200) {
+			throw new Error(`Gamma API failed for market ${id}: ${gammaResp.statusCode}`)
 		}
 
-		const responseText = Buffer.from(response.body).toString('utf-8')
-		const m = JSON.parse(responseText)
+		const gamma = JSON.parse(Buffer.from(gammaResp.body).toString('utf-8'))
+		if (!gamma.conditionId) { logs.push(`[${id}] Gamma: no conditionId (skipped)`); continue }
 
-		if (!m.conditionId) continue // market not yet deployed on-chain
+		logs.push(`[${id}] Gamma: conditionId=${gamma.conditionId}, question="${gamma.question}", endDate=${gamma.endDate}, active=${gamma.active}`)
+
+		// --- Source 2: CLOB API ---
+		const clobUrl = `${CLOB_API_BASE}/${gamma.conditionId}`
+		const clobResp = sendRequester.sendRequest({ method: 'GET', url: clobUrl }).result()
+
+		if (clobResp.statusCode === 404) { logs.push(`[${id}] CLOB: 404 (skipped)`); continue }
+		if (clobResp.statusCode !== 200) {
+			throw new Error(`CLOB API failed for condition ${gamma.conditionId}: ${clobResp.statusCode}`)
+		}
+
+		const clob = JSON.parse(Buffer.from(clobResp.body).toString('utf-8'))
+
+		logs.push(`[${id}] CLOB:  conditionId=${clob.condition_id}, question="${clob.question}", endDate=${clob.end_date_iso}, active=${clob.active}`)
+
+		// --- Cross-source validation ---
+		if (clob.condition_id !== gamma.conditionId) {
+			throw new Error(`Source mismatch for market ${id}: conditionId differs (gamma=${gamma.conditionId}, clob=${clob.condition_id})`)
+		}
+		if (clob.question !== gamma.question) {
+			throw new Error(`Source mismatch for market ${id}: question differs`)
+		}
+
+		// Compare date only (day precision) — Gamma and CLOB may differ on time-of-day
+		const gammaDate = gamma.endDate.split('T')[0]
+		const clobDate = clob.end_date_iso.split('T')[0]
+		if (gammaDate !== clobDate) {
+			throw new Error(`Source mismatch for market ${id}: endDate differs (gamma=${gamma.endDate}, clob=${clob.end_date_iso})`)
+		}
+		if (clob.active !== gamma.active) {
+			throw new Error(`Source mismatch for market ${id}: active differs (gamma=${gamma.active}, clob=${clob.active})`)
+		}
+
+		logs.push(`[${id}] ✓ Cross-source validated`)
 
 		markets.push({
-			conditionId: m.conditionId,
-			question: m.question,
-			endDate: m.endDate,
-			active: m.active,
+			conditionId: gamma.conditionId,
+			question: gamma.question,
+			endDate: gamma.endDate,
+			active: gamma.active,
 		})
 	}
 
-	cachedMarkets = markets
-	return { count: markets.length }
+	// Deterministic serialization: sorted by conditionId
+	const sorted = markets.sort((a, b) => a.conditionId.localeCompare(b.conditionId))
+	const marketsJson = JSON.stringify(sorted)
+
+	return { count: markets.length, marketsJson, debugLog: logs.join('\n') }
 }
 
 const writeMarketsOnChain = (runtime: Runtime<Config>, markets: MarketInfo[]): string => {
@@ -132,7 +176,6 @@ const writeMarketsOnChain = (runtime: Runtime<Config>, markets: MarketInfo[]): s
 }
 
 const onHttpTrigger = (runtime: Runtime<Config>, payload: HTTPPayload): string => {
-	// Decode the JSON input from the HTTP request
 	const inputJson = Buffer.from(payload.input).toString('utf-8')
 	const input: TriggerInput = JSON.parse(inputJson)
 
@@ -146,13 +189,20 @@ const onHttpTrigger = (runtime: Runtime<Config>, payload: HTTPPayload): string =
 			fetchMarkets,
 			ConsensusAggregationByFields<MarketsFetchResult>({
 				count: median,
+				marketsJson: identical,
+				debugLog: ignore,
 			}),
 		)(input.marketIds)
 		.result()
 
-	const markets = cachedMarkets
+	// Log per-source comparison
+	runtime.log(`--- Source comparison ---`)
+	runtime.log(result.debugLog ?? '(no debug log — field ignored in consensus)')
 
-	runtime.log(`Fetched ${result.count} markets, writing on-chain...`)
+	// Parse markets from consensus-verified JSON — all DON nodes agreed on this data
+	const markets: MarketInfo[] = JSON.parse(result.marketsJson)
+
+	runtime.log(`--- Consensus result (${result.count} markets) ---`)
 	runtime.log(JSON.stringify(markets, null, 2))
 
 	const txHash = writeMarketsOnChain(runtime, markets)
