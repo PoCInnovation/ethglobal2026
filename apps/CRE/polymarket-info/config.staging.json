@@ -1,5 +1,5 @@
 {
-  "oracleAddress": "0x8C9597CB3B336eEEC8fd61cd0c277336eddb525e",
+  "oracleAddress": "0xFe2842cda18fB514DA5cb7eA92bA9c726e4BfdCa",
   "chainSelectorName": "ethereum-testnet-sepolia",
   "gasLimit": "500000"
 }

@@ -17141,6 +17141,45 @@ var PolymarketOracleABI = [
     ]
   },
   {
+    name: "USDC_PRICE_FEED",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }]
+  },
+  {
+    name: "getUSDCPrice",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "price", type: "int256" }]
+  },
+  {
+    name: "validateTradePrice",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [{ name: "price", type: "int256" }]
+  },
+  {
+    name: "MarketsUpdated",
+    type: "event",
+    anonymous: false,
+    inputs: [
+      { name: "count", type: "uint256", indexed: false },
+      { name: "timestamp", type: "uint256", indexed: false }
+    ]
+  },
+  {
+    name: "PriceChecked",
+    type: "event",
+    anonymous: false,
+    inputs: [
+      { name: "usdcPrice", type: "int256", indexed: false },
+      { name: "timestamp", type: "uint256", indexed: false }
+    ]
+  },
+  {
     name: "InvalidAuthor",
     type: "error",
     inputs: [
@@ -17160,6 +17199,16 @@ var PolymarketOracleABI = [
     name: "Unauthorized",
     type: "error",
     inputs: []
+  },
+  {
+    name: "USDCDepeg",
+    type: "error",
+    inputs: [{ name: "price", type: "int256" }]
+  },
+  {
+    name: "StalePriceFeed",
+    type: "error",
+    inputs: [{ name: "updatedAt", type: "uint256" }]
   }
 ];
 var GAMMA_API_BASE = "https://gamma-api.polymarket.com/markets";

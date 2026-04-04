@@ -76,6 +76,7 @@ cre workflow simulate ./polymarket-info --target staging-settings \
 
 ## Contracts
 
-- **PolymarketOracle** — `0x8C9597CB3B336eEEC8fd61cd0c277336eddb525e` (Sepolia)
+- **PolymarketOracle** — `0xFe2842cda18fB514DA5cb7eA92bA9c726e4BfdCa` (Sepolia)
   - Receives CRE reports via `onReport()`, validates workflow identity
   - Stores `MarketInfo` structs: conditionId, question, endDate, active, lastUpdate
+  - Integrates **Chainlink USDC/USD Price Feed** (`0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E`) for depeg protection
