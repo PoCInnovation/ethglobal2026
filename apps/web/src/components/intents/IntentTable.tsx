@@ -22,6 +22,7 @@ import {
 } from "@agent-intents/shared";
 import { buildPolymarketTx } from "@/lib/polymarket";
 import { buildOrderFromIntent } from "@/lib/polymarket-order";
+import { submitSignedOrder } from "@/lib/polymarket-submit";
 import { Button } from "@ledgerhq/lumen-ui-react";
 import { useState } from "react";
 import { verifyTypedData } from "viem";
@@ -320,10 +321,18 @@ function IntentRow({ intent, onSelectIntent }: IntentRowProps) {
 				const order = buildOrderFromIntent(polyDetails, account);
 				const signature = await signTypedDataV4(order);
 				console.log("[Polymarket] Signed order:", { order: order.message, signature });
+
+				// Submit to CLOB
+				const result = await submitSignedOrder(order.message, signature, account);
+				if (!result.success) {
+					throw new Error(result.errorMsg || "CLOB submission failed");
+				}
+				console.log("[Polymarket] Order placed:", result);
+
 				await updateStatus.mutateAsync({
 					id: intent.id,
-					status: "authorized",
-					note: `Polymarket order signed (signature: ${signature.slice(0, 18)}...)`,
+					status: "confirmed",
+					note: `Polymarket order placed (orderID: ${result.orderID ?? "unknown"})`,
 				});
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : "Signing failed";

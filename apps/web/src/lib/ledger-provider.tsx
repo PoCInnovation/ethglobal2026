@@ -191,6 +191,9 @@ function getRpcUrl(chainId: number): string {
 			return customRpc.trim();
 		}
 	}
+	if (chainId === 137) {
+		return "https://polygon.drpc.org";
+	}
 	const chain = getChain(chainId);
 	return chain.rpcUrls.default.http[0] ?? "https://mainnet.base.org";
 }
