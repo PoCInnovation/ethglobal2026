@@ -136,6 +136,26 @@ def test_mcp_chain_id_mismatch_aborts_sign(backend, scenario_navigator: Navigate
             scenario_navigator.review_approve_with_warning(do_comparison=False)
 
 
+def test_mcp_expired_payload_rejected(backend):
+    """MCP with expires_at <= issued_at is rejected as invalid (0x6A80)."""
+    from client.market_context import MarketContext
+
+    app_client = EthAppClient(backend)
+    mcp = MarketContext(
+        token_id=SAMPLE_TOKEN_ID,
+        chain_id=137,
+        market_name="Test Market",
+        market_outcome="YES",
+        market_amount="10.00 USDC",
+        ttl_seconds=-10,  # expires_at will be BEFORE issued_at
+    )
+
+    from ragger.error import ExceptionRAPDU
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        app_client.provide_market_context(mcp)
+    assert exc_info.value.status == 0x6A80
+
+
 def test_mcp_screens_appear_before_eip712(scenario_navigator: NavigateWithScenario):
     """MCP screens (Market, Outcome, Amount) appear before EIP-712 fields."""
     from client.market_context import MarketContext
