@@ -102,7 +102,10 @@ void reset_app_context(void) {
     clear_safe_account();
     ui_all_cleanup();
     proxy_cleanup();
-    market_context_clear();
+    // NOTE: market_context is NOT cleared here so that MCP data sent before
+    // the EIP-712 setup APDUs survives the eip712_context_init() reset.
+    // It is cleared in mcp_parse_payload() on new MCP reception, on
+    // signature verification failure, and on chain-id mismatch.
 #ifdef HAVE_GATING_SUPPORT
     clear_gating();
 #endif
