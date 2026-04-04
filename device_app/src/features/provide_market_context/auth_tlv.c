@@ -1,6 +1,7 @@
 #include "auth_context.h"
 #include "market_context_keys.h"
 #include "mcp_tlv.h"
+#include "common_utils.h"
 #include "hash_bytes.h"
 #include "tlv_library.h"
 #include "tlv_apdu.h"
