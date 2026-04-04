@@ -35,10 +35,12 @@ export function IntentDetailDialog({
 	onCouncilComplete,
 }: IntentDetailDialogProps) {
 	const [councilDone, setCouncilDone] = useState(councilAlreadyDone);
+	const [councilVerdict, setCouncilVerdict] = useState<{ approved: boolean } | null>(null);
 
 	const handleCouncilComplete = useCallback(
-		(_result: { approved: boolean; ratio: number }) => {
+		(result: { approved: boolean; ratio: number }) => {
 			setCouncilDone(true);
+			setCouncilVerdict({ approved: result.approved });
 			onCouncilComplete?.(intent?.id ?? "");
 		},
 		[intent?.id, onCouncilComplete],
@@ -110,8 +112,35 @@ export function IntentDetailDialog({
 								style={{ borderColor: "rgba(255,255,255,0.07)" }}
 							>
 								{/* Scrollable trade details */}
-								<div className="flex-1 overflow-y-auto px-16 py-16" style={{ scrollbarWidth: "none" }}>
+								<div className="flex-1 overflow-y-auto px-16 py-16 flex flex-col gap-16" style={{ scrollbarWidth: "none" }}>
 									<IntentDetailContent intent={intent} />
+
+									{/* Verdict badge */}
+									{councilVerdict && (
+										<div className="flex items-center gap-8">
+											<div
+												className="flex items-center justify-center rounded-full flex-shrink-0"
+												style={{
+													width: 32,
+													height: 32,
+													background: councilVerdict.approved ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
+												}}
+											>
+												{councilVerdict.approved ? (
+													<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+														<path d="M2.5 7L5.5 10L11.5 4" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+													</svg>
+												) : (
+													<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+														<path d="M3.5 3.5L10.5 10.5M10.5 3.5L3.5 10.5" stroke="#ef4444" strokeWidth="2" strokeLinecap="round"/>
+													</svg>
+												)}
+											</div>
+											<span className="text-[13px] font-medium" style={{ color: councilVerdict.approved ? "#22c55e" : "#ef4444" }}>
+												{councilVerdict.approved ? "Approved by council" : "Rejected by council"}
+											</span>
+										</div>
+									)}
 								</div>
 
 								{/* Pinned action footer */}

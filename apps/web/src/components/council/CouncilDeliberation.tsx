@@ -160,12 +160,16 @@ function SummaryBar({ state }: { state: CouncilState }) {
         style={{ background: "#ffffff" }}
       >
         {isActive && !isDone && (
-          <>
-            <span className="size-[5px] rounded-full bg-black/30 animate-pulse flex-shrink-0" />
-            <span className="text-[14px] font-medium text-black/50">
+          <div className="flex items-center gap-10">
+            <div className="flex items-center gap-[5px]">
+              <span className="size-[6px] rounded-full bg-black/30 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "900ms" }} />
+              <span className="size-[6px] rounded-full bg-black/30 animate-bounce" style={{ animationDelay: "150ms", animationDuration: "900ms" }} />
+              <span className="size-[6px] rounded-full bg-black/30 animate-bounce" style={{ animationDelay: "300ms", animationDuration: "900ms" }} />
+            </div>
+            <span className="text-[14px] font-medium text-black/40">
               Deliberation in progress…
             </span>
-          </>
+          </div>
         )}
         {isDone && (
           <span className="text-[14px] font-medium text-black text-center leading-snug">
