@@ -24,6 +24,14 @@ class FieldTag(IntEnum):
     THRESHOLD = 0xa0,
     SIGNERS_COUNT = 0xa1,
     LESM_ROLE = 0xa2,
+    # MCP (Market Context Protocol) tags
+    MCP_TOKEN_ID = 0x60
+    MCP_ISSUED_AT = 0x61
+    MCP_EXPIRES_AT = 0x62
+    MCP_ATTESTER_ID = 0x63
+    MCP_MARKET_NAME = 0x64
+    MCP_MARKET_OUTCOME = 0x65
+    MCP_MARKET_AMOUNT = 0x66
 
 
 class TlvSerializable:

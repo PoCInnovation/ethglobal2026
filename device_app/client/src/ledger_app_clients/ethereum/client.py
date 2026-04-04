@@ -485,3 +485,12 @@ class EthAppClient:
         for chunk in chunks[:-1]:
             self._exchange(chunk)
         return self._exchange(chunks[-1])
+
+    def provide_market_context(self, mcp: "MarketContext") -> RAPDU:
+        """Send INS_PROVIDE_MARKET_CONTEXT (0x3A) with attested market context."""
+        from .market_context import MarketContext
+        chunks = self._cmd_builder.provide_market_context(mcp.serialize())
+        response = RAPDU(0x9000, b"")
+        for chunk in chunks:
+            response = self._backend.exchange_raw(chunk)
+        return response

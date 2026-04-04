@@ -44,6 +44,8 @@
 #include "cmd_get_tx_simulation.h"
 #include "cmd_get_gating.h"
 #include "cmd_proxy_info.h"
+#include "features/provide_market_context/cmd_provide_market_context.h"
+#include "features/provide_market_context/market_context.h"
 #include "commands_7702.h"
 #include "sign_message.h"
 #include "ui_utils.h"
@@ -100,6 +102,7 @@ void reset_app_context(void) {
     clear_safe_account();
     ui_all_cleanup();
     proxy_cleanup();
+    market_context_clear();
 #ifdef HAVE_GATING_SUPPORT
     clear_gating();
 #endif
@@ -283,6 +286,10 @@ static uint16_t handleApdu(command_t *cmd, uint32_t *flags, uint32_t *tx) {
             sw = handle_gating(cmd->p1, cmd->p2, cmd->data, cmd->lc);
             break;
 #endif
+
+        case INS_PROVIDE_MARKET_CONTEXT:
+            sw = handle_provide_market_context(cmd->p1, cmd->p2, cmd->data, cmd->lc);
+            break;
 
         default:
             sw = SWO_INVALID_INS;

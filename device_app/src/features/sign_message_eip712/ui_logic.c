@@ -13,6 +13,7 @@
 #include "filtering.h"
 #include "network.h"
 #include "time_format.h"
+#include "features/provide_market_context/market_context.h"
 #include "lists.h"
 #include "ui_utils.h"
 #include "utils.h"
@@ -1025,6 +1026,31 @@ bool ui_712_feed_to_display(const s_struct_712_field *field_ptr,
 }
 
 /**
+ * Inject MCP market context screens into the EIP-712 UI pair list.
+ * Called before ui_712_end_sign() when MCP is valid and verified.
+ */
+static void ui_712_inject_mcp_screens(void) {
+    if (!market_context_is_valid()) return;
+
+    // Screen: Market name
+    ui_712_set_title("Market", strlen("Market"));
+    ui_712_set_value(g_market_context.market_name,
+                     strlen(g_market_context.market_name));
+
+    // Screen: Outcome
+    ui_712_set_title("Outcome", strlen("Outcome"));
+    ui_712_set_value(g_market_context.market_outcome,
+                     strlen(g_market_context.market_outcome));
+
+    // Screen: Amount
+    ui_712_set_title("Amount", strlen("Amount"));
+    ui_712_set_value(g_market_context.market_amount,
+                     strlen(g_market_context.market_amount));
+
+    PRINTF("[MCP] Injected 3 MCP UI screens\n");
+}
+
+/**
  * Used to signal that we are done with reviewing the structs and we can now have
  * the option to approve or reject the signature
  */
@@ -1033,6 +1059,9 @@ void ui_712_end_sign(void) {
         apdu_response_code = SWO_COMMAND_NOT_ALLOWED;
         return;
     }
+
+    // Inject MCP market context screens at the front of the review
+    ui_712_inject_mcp_screens();
 
 #ifdef SCREEN_SIZE_WALLET
     if (true) {

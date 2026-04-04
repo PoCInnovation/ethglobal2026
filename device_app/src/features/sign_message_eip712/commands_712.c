@@ -1,5 +1,6 @@
 #include "apdu_constants.h"  // APDU response codes
 #include "context_712.h"
+#include "features/provide_market_context/market_context.h"
 #include "field_hash.h"
 #include "path.h"
 #include "ui_logic.h"
@@ -306,7 +307,22 @@ uint16_t handle_eip712_sign(const uint8_t *cdata, uint8_t length, uint32_t *flag
             ret = ui_712_message_hash();
         }
 #endif
-        ui_712_end_sign();
+        // MCP binding: if market context was provided, verify chainId matches
+        if (market_context_is_valid()) {
+            if (eip712_context != NULL &&
+                g_market_context.chain_id != eip712_context->chain_id) {
+                PRINTF("[MCP] chain_id mismatch: MCP=%llu EIP712=%llu\n",
+                       (unsigned long long) g_market_context.chain_id,
+                       (unsigned long long) eip712_context->chain_id);
+                market_context_clear();
+                apdu_response_code = SWO_INCORRECT_DATA;
+                ret = false;
+            }
+        }
+
+        if (ret) {
+            ui_712_end_sign();
+        }
     }
 
     if (!ret) {

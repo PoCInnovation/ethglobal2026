@@ -36,6 +36,7 @@ class InsType(IntEnum):
     SIGN_EIP7702_AUTHORIZATION = 0x34
     PROVIDE_SAFE_ACCOUNT = 0x36
     PROVIDE_GATING = 0x38
+    PROVIDE_MARKET_CONTEXT = 0x3A
 
 
 class P1Type(IntEnum):
@@ -613,3 +614,11 @@ class CommandBuilder:
 
     def provide_gating(self, tlv_payload: bytes) -> list[bytes]:
         return self.common_tlv_serialize(InsType.PROVIDE_GATING, tlv_payload)
+
+    def provide_market_context(self, tlv_payload: bytes) -> list[bytes]:
+        return self.common_tlv_serialize(
+            InsType.PROVIDE_MARKET_CONTEXT,
+            tlv_payload,
+            p1l=[0x00],
+            p2l=[P1Type.FIRST_CHUNK, P1Type.FOLLOWING_CHUNK],
+        )

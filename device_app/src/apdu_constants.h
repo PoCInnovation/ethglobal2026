@@ -36,6 +36,7 @@
 #define INS_SIGN_EIP7702_AUTHORIZATION      0x34
 #define INS_PROVIDE_SAFE_ACCOUNT            0x36
 #define INS_PROVIDE_GATING                  0x38
+#define INS_PROVIDE_MARKET_CONTEXT          0x3A
 
 #define INS_STR(x)                                                             \
     (x == INS_GET_PUBLIC_KEY                    ? "GET_PUBLIC_KEY"             \
@@ -64,6 +65,7 @@
      : x == INS_SIGN_EIP7702_AUTHORIZATION      ? "SIGN_EIP7702_AUTHORIZATION" \
      : x == INS_PROVIDE_SAFE_ACCOUNT            ? "PROVIDE_SAFE_ACCOUNT"       \
      : x == INS_PROVIDE_GATING                  ? "PROVIDE_GATING"             \
+     : x == INS_PROVIDE_MARKET_CONTEXT          ? "PROVIDE_MARKET_CONTEXT"     \
                                                 : "Unknown")
 #define P1_CONFIRM              0x01
 #define P1_NON_CONFIRM          0x00
@@ -133,5 +135,10 @@ uint16_t handle_safe_account(uint8_t p1,
                              const uint8_t *data,
                              uint8_t length,
                              uint32_t *flags);
+
+uint16_t handle_provide_market_context(uint8_t p1,
+                                       uint8_t p2,
+                                       const uint8_t *data,
+                                       uint8_t length);
 
 extern uint16_t apdu_response_code;

@@ -17,6 +17,7 @@ class Key(Enum):
     TRANSACTION_CHECKS = auto()
     SAFE = auto()
     GATING = auto()
+    POLYMARKET_MCP = auto()
 
 
 _keys: dict[Key, SigningKey] = {}
