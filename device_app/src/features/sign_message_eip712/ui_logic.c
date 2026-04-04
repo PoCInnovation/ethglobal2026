@@ -133,9 +133,15 @@ static bool ui_712_field_shown(void) {
 
     if (ui_ctx->filtering_mode == EIP712_FILTERING_BASIC) {
 #ifdef SCREEN_SIZE_WALLET
-        ret = true;
+        // If MCP context is valid and verbose is OFF, skip raw fields
+        if (market_context_is_valid() && !N_storage.verbose_eip712) {
+            ret = false;
+        } else {
+            ret = true;
+        }
 #else
         if (N_storage.verbose_eip712 || (path_get_root_type() == ROOT_DOMAIN)) {
+            // Even with verbose ON, if MCP is valid, let verbose control it
             ret = true;
         }
 #endif
@@ -255,8 +261,8 @@ void ui_712_set_value(const char *str, size_t length) {
 bool ui_712_redraw_generic_step(void) {
     if (appState != APP_STATE_SIGNING_EIP712) {  // Initialize if it is not already
         if ((ui_ctx->filtering_mode == EIP712_FILTERING_BASIC) && !N_storage.dataAllowed &&
-            !N_storage.verbose_eip712) {
-            // Both settings not enabled => Error
+            !N_storage.verbose_eip712 && !market_context_is_valid()) {
+            // No blind signing, no verbose, no MCP context => Error
             ui_error_blind_signing();
             apdu_response_code = SWO_INCORRECT_DATA;
             eip712_context->go_home_on_failure = false;
@@ -1084,7 +1090,8 @@ void ui_712_end_sign(void) {
 #ifdef SCREEN_SIZE_WALLET
     if (true) {
 #else
-    if (N_storage.verbose_eip712 || (ui_ctx->filtering_mode == EIP712_FILTERING_FULL)) {
+    if (N_storage.verbose_eip712 || (ui_ctx->filtering_mode == EIP712_FILTERING_FULL) ||
+        market_context_is_valid()) {
 #endif
         ui_ctx->end_reached = true;
         apdu_response_code = ui_sign_712(ui_ctx->filtering_mode);

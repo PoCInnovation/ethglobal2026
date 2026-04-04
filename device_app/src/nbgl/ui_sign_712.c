@@ -7,6 +7,7 @@
 #include "ui_utils.h"
 #include "mem_utils.h"
 #include "cmd_get_gating.h"
+#include "features/provide_market_context/market_context.h"
 
 /**
  * @brief Trigger the EIP712 review flow
@@ -47,8 +48,8 @@ static void ui_712_start_review(e_eip712_filtering_mode filtering_mode,
     } else
 #endif
     {
-        if (N_storage.verbose_eip712) {
-            // In verbose mode, we allow skipping
+        if (N_storage.verbose_eip712 || market_context_is_valid()) {
+            // In verbose mode or with MCP context, we allow skipping
             operationType |= SKIPPABLE_OPERATION;
         }
     }
