@@ -707,6 +707,23 @@ app.get("/api/polymarket/credentials", (req, res) => {
 	res.json({ success: true, connected: !!creds });
 });
 
+// Get full credentials (for order submission)
+app.get("/api/polymarket/credentials/full", (req, res) => {
+	const cookies = parseCookies(req.headers.cookie);
+	const sessionId = cookies[SESSION_COOKIE_NAME];
+	const session = sessionId ? authSessions.get(sessionId) : undefined;
+	if (!session || session.expiresAt < Date.now()) {
+		res.status(401).json({ success: false, error: "Authentication required" });
+		return;
+	}
+	const creds = polymarketCreds.get(session.walletAddress);
+	if (!creds) {
+		res.status(404).json({ success: false, error: "No Polymarket credentials" });
+		return;
+	}
+	res.json({ success: true, credentials: creds });
+});
+
 // Delete credentials
 app.delete("/api/polymarket/credentials", (req, res) => {
 	const cookies = parseCookies(req.headers.cookie);

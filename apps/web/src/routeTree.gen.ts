@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as AgentContextRouteImport } from './routes/agent-context'
@@ -19,6 +20,11 @@ import { Route as PayIntentIdRouteImport } from './routes/pay.$intentId'
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortfolioRoute = PortfolioRouteImport.update({
+  id: '/portfolio',
+  path: '/portfolio',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HistoryRoute = HistoryRouteImport.update({
@@ -52,6 +58,7 @@ export interface FileRoutesByFullPath {
   '/agent-context': typeof AgentContextRoute
   '/docs': typeof DocsRoute
   '/history': typeof HistoryRoute
+  '/portfolio': typeof PortfolioRoute
   '/settings': typeof SettingsRoute
   '/pay/$intentId': typeof PayIntentIdRoute
 }
@@ -60,6 +67,7 @@ export interface FileRoutesByTo {
   '/agent-context': typeof AgentContextRoute
   '/docs': typeof DocsRoute
   '/history': typeof HistoryRoute
+  '/portfolio': typeof PortfolioRoute
   '/settings': typeof SettingsRoute
   '/pay/$intentId': typeof PayIntentIdRoute
 }
@@ -69,6 +77,7 @@ export interface FileRoutesById {
   '/agent-context': typeof AgentContextRoute
   '/docs': typeof DocsRoute
   '/history': typeof HistoryRoute
+  '/portfolio': typeof PortfolioRoute
   '/settings': typeof SettingsRoute
   '/pay/$intentId': typeof PayIntentIdRoute
 }
@@ -79,6 +88,7 @@ export interface FileRouteTypes {
     | '/agent-context'
     | '/docs'
     | '/history'
+    | '/portfolio'
     | '/settings'
     | '/pay/$intentId'
   fileRoutesByTo: FileRoutesByTo
@@ -87,6 +97,7 @@ export interface FileRouteTypes {
     | '/agent-context'
     | '/docs'
     | '/history'
+    | '/portfolio'
     | '/settings'
     | '/pay/$intentId'
   id:
@@ -95,6 +106,7 @@ export interface FileRouteTypes {
     | '/agent-context'
     | '/docs'
     | '/history'
+    | '/portfolio'
     | '/settings'
     | '/pay/$intentId'
   fileRoutesById: FileRoutesById
@@ -104,6 +116,7 @@ export interface RootRouteChildren {
   AgentContextRoute: typeof AgentContextRoute
   DocsRoute: typeof DocsRoute
   HistoryRoute: typeof HistoryRoute
+  PortfolioRoute: typeof PortfolioRoute
   SettingsRoute: typeof SettingsRoute
   PayIntentIdRoute: typeof PayIntentIdRoute
 }
@@ -115,6 +128,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/portfolio': {
+      id: '/portfolio'
+      path: '/portfolio'
+      fullPath: '/portfolio'
+      preLoaderRoute: typeof PortfolioRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/history': {
@@ -160,6 +180,7 @@ const rootRouteChildren: RootRouteChildren = {
   AgentContextRoute: AgentContextRoute,
   DocsRoute: DocsRoute,
   HistoryRoute: HistoryRoute,
+  PortfolioRoute: PortfolioRoute,
   SettingsRoute: SettingsRoute,
   PayIntentIdRoute: PayIntentIdRoute,
 }
