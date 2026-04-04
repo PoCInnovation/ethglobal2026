@@ -5,12 +5,40 @@
  * - Agents to submit transaction intents
  * - Live App to fetch pending intents
  * - Status updates when intents are signed/rejected
+ * - Polymarket scanner + Agent Council deliberations
  */
+
+// Load shared .env from web app (contains GEMINI_API_KEY, etc.)
+import { readFileSync as _readEnv } from "node:fs";
+import { resolve as _resolveEnv } from "node:path";
+try {
+	const envPath = _resolveEnv(import.meta.dirname ?? ".", "../../web/.env");
+	const envContent = _readEnv(envPath, "utf-8");
+	for (const line of envContent.split("\n")) {
+		const trimmed = line.trim();
+		if (!trimmed || trimmed.startsWith("#")) continue;
+		const eqIdx = trimmed.indexOf("=");
+		if (eqIdx === -1) continue;
+		const key = trimmed.slice(0, eqIdx).trim();
+		let val = trimmed.slice(eqIdx + 1).trim();
+		// Strip quotes
+		if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+			val = val.slice(1, -1);
+		}
+		if (!process.env[key]) {
+			process.env[key] = val;
+		}
+	}
+	console.log(`[Env] Loaded shared env from ${envPath}`);
+} catch {
+	// No shared .env found, that's OK — env vars should be set externally
+}
 
 import {
 	type CreateIntentRequest,
 	type Intent,
 	type IntentStatus,
+	type PolymarketTradeDetails,
 	type X402PaymentPayload,
 	getExplorerTxUrl,
 } from "@agent-intents/shared";
@@ -20,6 +48,14 @@ import { resolve } from "node:path";
 import cors from "cors";
 import express from "express";
 import { v4 as uuidv4 } from "uuid";
+import { scanMarkets, getMarketDetails } from "./polymarket-scanner.js";
+import {
+	deliberateAndPropose,
+	deliberate,
+	getDeliberation,
+	listDeliberations,
+	type ProposedTrade,
+} from "./agent-council.js";
 
 const app = express();
 const PORT = process.env.PORT || 3005;
@@ -195,16 +231,17 @@ app.post("/api/auth/verify", async (req, res) => {
 });
 
 // GET /api/me – return authenticated wallet from session cookie
+// Always 200 + JSON so the browser does not log a failed fetch on first visit (no cookie yet).
 app.get("/api/me", (req, res) => {
 	const cookies = parseCookies(req.headers.cookie);
 	const sessionId = cookies[SESSION_COOKIE_NAME];
 	if (!sessionId) {
-		res.status(401).json({ success: false, error: "Authentication required" });
+		res.json({ success: false, error: "Authentication required" });
 		return;
 	}
 	const session = authSessions.get(sessionId);
 	if (!session || session.expiresAt < Date.now()) {
-		res.status(401).json({ success: false, error: "Authentication required" });
+		res.json({ success: false, error: "Authentication required" });
 		return;
 	}
 	res.json({ success: true, walletAddress: session.walletAddress });
@@ -229,9 +266,11 @@ app.post("/api/intents", (req, res) => {
 		const intent = createIntent(body, userId);
 		intents.set(intent.id, intent);
 
-		console.log(
-			`[Intent Created] ${intent.id} by ${intent.agentName}: ${intent.details.amount} ${intent.details.token} to ${intent.details.recipient}`,
-		);
+		const d = intent.details;
+		const logDetails = d.type === "transfer"
+			? `${d.amount} ${d.token} to ${d.recipient}`
+			: `${d.type}: ${d.amount}`;
+		console.log(`[Intent Created] ${intent.id} by ${intent.agentName}: ${logDetails}`);
 
 		res.status(201).json({ success: true, intent });
 	} catch (error) {
@@ -268,7 +307,7 @@ app.get("/api/intents", (req, res) => {
 	const limit = Number.isFinite(parsedLimit) ? Math.min(100, Math.max(1, parsedLimit)) : 50;
 
 	const userIntents = Array.from(intents.values())
-		.filter((i) => i.userId === userId)
+		.filter((i) => i.userId === userId || i.userId === "polymarket-scanner")
 		.filter((i) => !status || i.status === status)
 		.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 		.slice(0, limit);
@@ -332,7 +371,7 @@ app.post("/api/intents/status", (req, res) => {
 		intent.reviewedAt = now;
 	}
 
-	if (paymentSignatureHeader || paymentPayload) {
+	if ((paymentSignatureHeader || paymentPayload) && intent.details.type === "transfer") {
 		const existing = intent.details.x402;
 		const base = paymentPayload
 			? { resource: paymentPayload.resource, accepted: paymentPayload.accepted }
@@ -394,7 +433,7 @@ app.patch("/api/intents/:id/status", (req, res) => {
 	}
 
 	// Persist x402 proof data inside the details blob if provided
-	if (paymentSignatureHeader || paymentPayload) {
+	if ((paymentSignatureHeader || paymentPayload) && intent.details.type === "transfer") {
 		const existing = intent.details.x402;
 		const base = paymentPayload
 			? { resource: paymentPayload.resource, accepted: paymentPayload.accepted }
@@ -956,6 +995,387 @@ app.post("/api/polymarket/order", async (req, res) => {
 	}
 });
 
+// ============ Polymarket Scanner + Agent Council ============
+
+// List market opportunities with trading signals
+app.get("/api/polymarket/opportunities", async (req, res) => {
+	try {
+		const limit = Number(req.query.limit) || 20;
+		const sortBy = (req.query.sortBy as string) || "volume";
+		const markets = await scanMarkets({ limit, sortBy: sortBy as any });
+		res.json({ success: true, markets });
+	} catch (err) {
+		console.error("[Scanner] Error:", err);
+		res.status(500).json({ success: false, error: "Failed to scan markets" });
+	}
+});
+
+// ============ Council SSE Deliberation ============
+// GET /api/council/deliberate?intentId=...
+// Streams deliberation events via Server-Sent Events
+app.get("/api/council/deliberate", async (req, res) => {
+	console.log(`[Council SSE] Endpoint hit! intentId=${req.query.intentId}`);
+	const intentId = req.query.intentId as string | undefined;
+	if (!intentId) {
+		res.status(400).json({ error: "Missing intentId" });
+		return;
+	}
+
+	// Find the intent
+	const intent = intents.get(intentId);
+	if (!intent) {
+		console.log(`[Council SSE] Intent ${intentId} not found! Current intents count: ${intents.size}`);
+		res.status(404).json({ error: "Intent not found" });
+		return;
+	}
+
+	if (intent.details.type !== "polymarket_trade") {
+		res.status(400).json({ error: "Not a Polymarket trade" });
+		return;
+	}
+
+	const polyDetails = intent.details as PolymarketTradeDetails;
+
+	// Check if council result already exists (cached)
+	const cachedResult = (intent.details as any).councilResult;
+	if (cachedResult) {
+		res.writeHead(200, {
+			"Content-Type": "text/event-stream; charset=utf-8",
+			"Cache-Control": "no-cache",
+			"Connection": "keep-alive",
+			"X-Accel-Buffering": "no",
+		});
+		res.write(`data: ${JSON.stringify({ type: "council_cached", payload: cachedResult })}\n\n`);
+		res.end();
+		return;
+	}
+
+	// Setup SSE (charset helps some proxies/browsers accept the stream)
+	res.writeHead(200, {
+		"Content-Type": "text/event-stream; charset=utf-8",
+		"Cache-Control": "no-cache",
+		"Connection": "keep-alive",
+		"X-Accel-Buffering": "no",
+	});
+
+	const send = (type: string, payload: unknown) => {
+		if (!res.closed) {
+			res.write(`data: ${JSON.stringify({ type, payload })}\n\n`);
+		}
+	};
+
+	// Agent mapping: our backend roles → frontend agent display
+	const agentMap: Record<string, { id: string; name: string; role: string; avatar: string }> = {
+		analyst: { id: "bull", name: "Bull Analyst", role: "Market Analysis", avatar: "📊" },
+		riskManager: { id: "bear", name: "Risk Manager", role: "Risk Assessment", avatar: "🛡️" },
+		contrarian: { id: "quant", name: "Contrarian", role: "Devil's Advocate", avatar: "🔥" },
+	};
+
+	// Send council_started
+	send("council_started", {
+		agents: Object.values(agentMap),
+	});
+
+	try {
+		// Get market details for the deliberation
+		const market = await getMarketDetails(polyDetails.conditionId);
+		if (!market) {
+			send("error", { fatal: true, message: "Market not found" });
+			res.end();
+			return;
+		}
+
+		// Build context
+		const outcomesStr = market.outcomes
+			.map((o) => `  - ${o.name}: ${(o.price * 100).toFixed(1)}%`)
+			.join("\n");
+
+		const marketContext = `## Trading Opportunity
+
+**Market:** ${market.question}
+**Condition ID:** ${market.conditionId}
+
+**Outcomes & Prices:**
+${outcomesStr}
+
+**24h Volume:** $${market.volume24h.toLocaleString()}
+**Liquidity:** $${market.liquidity.toLocaleString()}
+**End Date:** ${market.endDate}
+**Signal:** ${market.signal} (strength: ${market.signalStrength}/100)
+**Memo:** ${market.memo}
+
+The intent proposes: ${polyDetails.outcome} for ${polyDetails.amount} USDC.
+
+Should we take a position on this market? If so, which outcome and how much?`;
+
+		// Run deliberation with streaming SSE
+		const geminiKey = process.env.GEMINI_API_KEY;
+		const openaiKey = process.env.OPENAI_API_KEY;
+		console.log("[Council SSE] Checking API keys: Gemini=", !!geminiKey, "OpenAI=", !!openaiKey);
+		if (!geminiKey && !openaiKey) {
+			send("error", { fatal: true, message: "GEMINI_API_KEY or OPENAI_API_KEY required" });
+			res.end();
+			return;
+		}
+
+		const { createLlmOpenAIClient, defaultLlmModel, GEMINI_OPENAI_COMPAT_BASE_URL } =
+			await import("./llm-openai-client.js");
+		const client = createLlmOpenAIClient();
+		const modelName = defaultLlmModel();
+		console.log(
+			`[Council SSE] model=${modelName}${geminiKey ? ` geminiBase=${GEMINI_OPENAI_COMPAT_BASE_URL}` : ""}`,
+		);
+
+		const { SYSTEM_PROMPTS, AGENT_LABELS } = await import("./agent-council.js");
+
+		const agentRoles = ["analyst", "riskManager", "contrarian"] as const;
+		const allMessages: Array<{ agent: string; round: number; content: string }> = [];
+
+		// Round 1
+		for (const role of agentRoles) {
+			const agentInfo = agentMap[role]!;
+			console.log(`[Council SSE] Round 1: ${role} starts thinking...`);
+			send("agent_thinking", { agentId: agentInfo.id, round: 1 });
+
+			const messages: any[] = [
+				{ role: "system", content: SYSTEM_PROMPTS[role] },
+				{ role: "user", content: marketContext },
+			];
+
+			try {
+				console.log(`[Council SSE] Calling client.chat.completions.create for ${role}...`);
+				const stream = await client.chat.completions.create({
+					model: modelName,
+					messages,
+					temperature: 0.7,
+					max_tokens: 800,
+					stream: true,
+				});
+				console.log(`[Council SSE] Client call successful for ${role}, starting iteration...`);
+
+				let fullContent = "";
+				for await (const chunk of stream) {
+					const token = chunk.choices[0]?.delta?.content;
+					if (token) {
+						fullContent += token;
+						send("agent_token", { agentId: agentInfo.id, token });
+					}
+				}
+				console.log(`[Council SSE] Stream complete for ${role}`);
+
+				allMessages.push({ agent: role, round: 1, content: fullContent });
+				send("agent_message", { agentId: agentInfo.id, round: 1, content: fullContent });
+			} catch (err) {
+				console.error(`[Council SSE] ${role} error:`, err);
+				allMessages.push({ agent: role, round: 1, content: "(Agent error)\nVOTE: ABSTAIN" });
+				send("agent_message", { agentId: agentInfo.id, round: 1, content: "(Agent error)\nVOTE: ABSTAIN" });
+			}
+		}
+
+		// Round 2
+		const round1Context = allMessages
+			.filter(m => m.round === 1)
+			.map(m => `[${AGENT_LABELS[m.agent as keyof typeof AGENT_LABELS]}]: ${m.content}`)
+			.join("\n\n---\n\n");
+
+		for (const role of agentRoles) {
+			const agentInfo = agentMap[role]!;
+			console.log(`[Council SSE] Round 2: ${role} starts thinking...`);
+			send("agent_thinking", { agentId: agentInfo.id, round: 2 });
+
+			const otherMessages = allMessages
+				.filter(m => m.agent !== role && m.round === 1)
+				.map(m => `[${AGENT_LABELS[m.agent as keyof typeof AGENT_LABELS]}]: ${m.content}`)
+				.join("\n\n---\n\n");
+
+			const messages: any[] = [
+				{ role: "system", content: SYSTEM_PROMPTS[role as keyof typeof SYSTEM_PROMPTS] },
+				{ role: "user", content: marketContext },
+				{
+					role: "user",
+					content: `Here are the other council members' opinions:\n\n${otherMessages}\n\nGive your final response for round 2.`,
+				},
+			];
+
+			try {
+				console.log(`[Council SSE] Round 2: Calling client.chat.completions.create for ${role}...`);
+				const stream = await client.chat.completions.create({
+					model: modelName,
+					messages,
+					temperature: 0.7,
+					max_tokens: 800,
+					stream: true,
+				});
+				console.log(`[Council SSE] Round 2: Client call successful for ${role}, starting iteration...`);
+
+				let fullContent = "";
+				for await (const chunk of stream) {
+					const token = chunk.choices[0]?.delta?.content;
+					if (token) {
+						fullContent += token;
+						send("agent_token", { agentId: agentInfo.id, token });
+					}
+				}
+				console.log(`[Council SSE] Round 2: Stream complete for ${role}`);
+
+				allMessages.push({ agent: role, round: 2, content: fullContent });
+				send("agent_message", { agentId: agentInfo.id, round: 2, content: fullContent });
+
+				// Parse vote
+				const voteMatch = /VOTE:\s*(APPROVE|REJECT|ABSTAIN)/i.exec(fullContent);
+				const vote = voteMatch?.[1]?.toUpperCase() === "APPROVE" ? "FOR" : voteMatch?.[1]?.toUpperCase() === "REJECT" ? "AGAINST" : "ABSTAIN";
+				send("agent_vote", { agentId: agentInfo.id, vote });
+			} catch (err) {
+				console.error(`[Council SSE] ${role} round 2 error:`, err);
+				allMessages.push({ agent: role, round: 2, content: "(Error)\nVOTE: ABSTAIN" });
+				send("agent_message", { agentId: agentInfo.id, round: 2, content: "(Error)\nVOTE: ABSTAIN" });
+				send("agent_vote", { agentId: agentInfo.id, vote: "ABSTAIN" });
+			}
+		}
+
+		// Compute votes
+		const round2 = allMessages.filter(m => m.round === 2);
+		let totalFor = 0, totalAgainst = 0, totalAbstain = 0;
+		for (const msg of round2) {
+			const voteMatch = /VOTE:\s*(APPROVE|REJECT|ABSTAIN)/i.exec(msg.content);
+			const v = voteMatch?.[1]?.toUpperCase();
+			if (v === "APPROVE") totalFor++;
+			else if (v === "REJECT") totalAgainst++;
+			else totalAbstain++;
+		}
+		const total = totalFor + totalAgainst + totalAbstain;
+		const approved = totalFor >= 2;
+		const ratio = total > 0 ? totalFor / total : 0;
+
+		const councilResult = {
+			approved,
+			ratio,
+			totalFor,
+			totalAgainst,
+			totalAbstain,
+			summary: approved
+				? `Trade approved by council (${totalFor}/${total} votes)`
+				: `Trade rejected by council (${totalAgainst}/${total} against)`,
+			agents: agentRoles.map(role => {
+				const info = agentMap[role]!;
+				const rounds = allMessages.filter(m => m.agent === role).map(m => m.content);
+				const lastMsg = rounds[rounds.length - 1] || "";
+				const voteMatch = /VOTE:\s*(APPROVE|REJECT|ABSTAIN)/i.exec(lastMsg);
+				const vote = voteMatch?.[1]?.toUpperCase() === "APPROVE" ? "FOR" : voteMatch?.[1]?.toUpperCase() === "REJECT" ? "AGAINST" : "ABSTAIN";
+				return {
+					agentId: info.id,
+					agentName: info.name,
+					role: info.role,
+					avatar: info.avatar,
+					rounds,
+					vote,
+				};
+			}),
+		};
+
+		// Cache result in intent details
+		(intent.details as any).councilResult = councilResult;
+
+		send("council_result", councilResult);
+		console.log(`[Council SSE] Deliberation complete for ${intentId}: ${approved ? "APPROVED" : "REJECTED"} (${totalFor}/${total})`);
+	} catch (err) {
+		console.error("[Council SSE] Fatal error:", err);
+		send("error", { fatal: true, message: err instanceof Error ? err.message : "Deliberation failed" });
+	}
+
+	res.end();
+});
+
+// Launch a council deliberation on a market
+app.post("/api/polymarket/council/deliberate", async (req, res) => {
+	try {
+		const { conditionId, outcome, reason } = req.body as {
+			conditionId?: string;
+			outcome?: string;
+			reason?: string;
+		};
+
+		if (!conditionId) {
+			res.status(400).json({ success: false, error: "Missing conditionId" });
+			return;
+		}
+
+		const market = await getMarketDetails(conditionId);
+		if (!market) {
+			res.status(404).json({ success: false, error: "Market not found" });
+			return;
+		}
+
+		const userReason = outcome
+			? `Agent proposes ${outcome} — ${reason || "no reason given"}`
+			: reason || "Analyze this opportunity";
+
+		// Intent creation callback — injects into the existing intent queue
+		const createIntentFn = (trade: ProposedTrade, mkt: typeof market): string => {
+			const now = new Date().toISOString();
+			const id = `int_${Date.now()}_${uuidv4().slice(0, 8)}`;
+
+			const selectedOutcome = mkt.outcomes.find(
+				(o) => o.name.toLowerCase() === trade.outcome.toLowerCase(),
+			);
+
+			const details: PolymarketTradeDetails = {
+				type: "polymarket_trade",
+				conditionId: mkt.conditionId,
+				marketTitle: mkt.question,
+				outcome: trade.outcome,
+				amount: trade.amount,
+				outcomePrice: selectedOutcome?.price,
+				tokenId: selectedOutcome?.tokenId,
+				chainId: 137,
+				memo: trade.reasoning,
+			};
+
+			const intent: Intent = {
+				id,
+				userId: "council-agent",
+				agentId: "council",
+				agentName: "Agent Council",
+				details,
+				urgency: "normal",
+				status: "pending",
+				createdAt: now,
+				expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+				statusHistory: [{ status: "pending", timestamp: now }],
+			};
+
+			intents.set(id, intent);
+			console.log(`[Council] Intent created in queue: ${id}`);
+			return id;
+		};
+
+		const deliberation = await deliberateAndPropose(market, userReason, createIntentFn);
+
+		res.json({ success: true, deliberation });
+	} catch (err) {
+		console.error("[Council] Deliberation error:", err);
+		res.status(500).json({
+			success: false,
+			error: err instanceof Error ? err.message : "Deliberation failed",
+		});
+	}
+});
+
+// List all past deliberations
+app.get("/api/polymarket/council/deliberations", (_req, res) => {
+	res.json({ success: true, deliberations: listDeliberations() });
+});
+
+// Get a specific deliberation
+app.get("/api/polymarket/council/deliberations/:id", (req, res) => {
+	const d = getDeliberation(req.params.id);
+	if (!d) {
+		res.status(404).json({ success: false, error: "Deliberation not found" });
+		return;
+	}
+	res.json({ success: true, deliberation: d });
+});
+
 // ============ Demo/Debug ============
 
 // List all intents (debug endpoint)
@@ -993,6 +1413,112 @@ app.listen(PORT, () => {
 ║    GET    /api/agents/:id           Get agent             ║
 ║    DELETE /api/agents/:id           Revoke agent          ║
 ║                                                           ║
+║  🔮 Polymarket Council:                                   ║
+║    GET  /api/polymarket/opportunities  Scan markets       ║
+║    POST /api/polymarket/council/deliberate  Deliberate    ║
+║    GET  /api/polymarket/council/deliberations  History    ║
+║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
+
+	// ============ Auto-Scanner ============
+	// Run in background every 60s, creates intents from scan results
+	let latestScanResults: Awaited<ReturnType<typeof scanMarkets>> = [];
+	let scanRunning = false;
+
+	// Track which conditionIds already have a pending intent (avoid duplicates)
+	function getExistingConditionIds(): Set<string> {
+		const ids = new Set<string>();
+		for (const intent of intents.values()) {
+			if (intent.details.type === "polymarket_trade" && intent.status === "pending") {
+				ids.add((intent.details as any).conditionId);
+			}
+		}
+		return ids;
+	}
+
+	async function runAutoScan() {
+		if (scanRunning) {
+			console.log("[AutoScan] ⏭️ Skipping — previous scan still running");
+			return;
+		}
+		scanRunning = true;
+		try {
+			latestScanResults = await scanMarkets({ limit: 10, sortBy: "volume" });
+			
+			// Create intents for new markets
+			const existing = getExistingConditionIds();
+			let created = 0;
+			for (const market of latestScanResults) {
+				if (existing.has(market.conditionId)) continue;
+				
+				// Pick the best outcome (highest signal)
+				const bestOutcome = market.outcomes.reduce((a, b) => a.price > b.price ? a : b);
+				
+				const id = `int_${Date.now()}_${uuidv4().slice(0, 8)}`;
+				const now = new Date().toISOString();
+				const intent: Intent = {
+					id,
+					userId: "polymarket-scanner",
+					agentId: "scanner",
+					agentName: "Polymarket Scanner",
+					details: {
+						type: "polymarket_trade" as const,
+						conditionId: market.conditionId,
+						marketTitle: market.question,
+						outcome: bestOutcome.name as "Yes" | "No",
+						amount: "50",
+						outcomePrice: bestOutcome.price,
+						tokenId: bestOutcome.tokenId,
+						chainId: 137,
+						memo: `${market.signal} (${market.signalStrength}/100) — ${market.memo}`,
+					},
+					urgency: market.signalStrength > 80 ? "high" : "normal",
+					status: "pending",
+					createdAt: now,
+					expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+					statusHistory: [{ status: "pending", timestamp: now }],
+				};
+				intents.set(id, intent);
+				created++;
+				console.log(`[AutoScan] 📝 Created intent ${id} for "${market.question}" (${market.signal})`);
+			}
+			if (created > 0) {
+				console.log(`[AutoScan] ✅ Created ${created} new intents from scan`);
+			} else {
+				console.log(`[AutoScan] ℹ️ No new markets to create intents for`);
+			}
+		} catch (err) {
+			console.error("[AutoScan] ❌ Error:", err instanceof Error ? err.message : err);
+		} finally {
+			scanRunning = false;
+		}
+	}
+
+	// Initial scan after 2s (let server finish startup)
+	setTimeout(() => {
+		runAutoScan();
+	}, 2000);
+
+	// Then every 60s
+	setInterval(() => {
+		runAutoScan();
+	}, 60_000);
+
+	// Expose cached scan results
+	app.get("/api/polymarket/scan-cache", (_req, res) => {
+		res.json({
+			success: true,
+			count: latestScanResults.length,
+			markets: latestScanResults,
+			nextScanIn: "~60s",
+		});
+	});
+
+	// Manual trigger to scan now
+	app.post("/api/polymarket/scan-now", async (_req, res) => {
+		await runAutoScan();
+		res.json({ success: true, count: latestScanResults.length });
+	});
 });
+

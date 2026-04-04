@@ -1,7 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { CouncilState } from "@/lib/councilTypes";
 
-const API_BASE = import.meta.env.DEV ? import.meta.env.VITE_BACKEND_URL || "" : "";
+// Same-origin `/api/*` as wallet-auth and intents queries — Vite proxies to Express in dev.
+// Do not use VITE_BACKEND_URL here: cross-origin EventSource often fails or stalls while fetch works.
+const API_BASE = "";
 
 const initialState: CouncilState = {
   phase: "idle",
@@ -158,30 +160,22 @@ export function useCouncilDeliberation(intentId: string | null) {
   const start = useCallback(() => {
     if (!intentId) return;
 
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+
     setState({ ...initialState, phase: "connecting" });
 
-    const url = `${API_BASE}/api/council/deliberate?intentId=${intentId}`;
+    const url = `${API_BASE}/api/council/deliberate?intentId=${encodeURIComponent(intentId)}`;
     console.log("[Council] Connecting →", url);
 
-    // Pre-flight: check auth via /api/me (lightweight, doesn't trigger deliberation)
-    fetch(`${API_BASE}/api/me`, { credentials: "include" })
-      .then(async (res) => {
-        if (!res.ok) {
-          const body = await res.text().catch(() => "");
-          const msg = body ? (() => { try { return JSON.parse(body).error ?? body; } catch { return body; } })() : res.statusText;
-          console.error(`[Council] Auth check failed: HTTP ${res.status} —`, msg);
-          setState(prev => ({ ...prev, phase: "error", error: `Not authenticated (HTTP ${res.status})` }));
-          return;
-        }
-        console.log("[Council] Auth OK, opening SSE...");
-        const es = new EventSource(url, { withCredentials: true });
-        eventSourceRef.current = es;
-        openEventSource(es);
-      })
-      .catch((err) => {
-        console.error("[Council] Auth check network error:", err);
-        setState(prev => ({ ...prev, phase: "error", error: "Network error — is the backend running?" }));
-      });
+    const es = new EventSource(url, { withCredentials: true });
+    eventSourceRef.current = es;
+
+    es.onopen = () => {
+      console.log("[Council] SSE open");
+    };
+
+    openEventSource(es);
   }, [intentId, openEventSource]);
 
   // Cleanup on unmount
