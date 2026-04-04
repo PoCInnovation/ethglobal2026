@@ -1,0 +1,91 @@
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { createHash, createSign } from "node:crypto";
+
+// TLV tag constants (must match C device code)
+const TAG = {
+  STRUCT_TYPE: 0x01,
+  STRUCT_VERSION: 0x02,
+  CHAIN_ID: 0x23,
+  TOKEN_ID: 0x60,
+  ISSUED_AT: 0x61,
+  EXPIRES_AT: 0x62,
+  ATTESTER_ID: 0x63,
+  MARKET_NAME: 0x64,
+  MARKET_OUTCOME: 0x65,
+  MARKET_AMOUNT: 0x66,
+  DER_SIGNATURE: 0x15,
+};
+
+const MCP_STRUCT_TYPE = 0x0a;
+const MCP_STRUCT_VERSION = 0x01;
+const TTL_SECONDS = 300;
+
+function tlvField(tag: number, value: Buffer): Buffer {
+  const tagBuf = Buffer.alloc(1);
+  tagBuf.writeUInt8(tag);
+  const len = value.length;
+  let lenBuf: Buffer;
+  if (len < 0x80) {
+    lenBuf = Buffer.alloc(1);
+    lenBuf.writeUInt8(len);
+  } else if (len <= 0xff) {
+    lenBuf = Buffer.from([0x81, len]);
+  } else {
+    lenBuf = Buffer.from([0x82, (len >> 8) & 0xff, len & 0xff]);
+  }
+  return Buffer.concat([tagBuf, lenBuf, value]);
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== "POST") return res.status(405).end();
+
+  const { tokenId, chainId, marketName, marketOutcome, marketAmount } =
+    req.body;
+  if (!tokenId || !chainId || !marketName || !marketOutcome || !marketAmount) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = now + TTL_SECONDS;
+
+  // Build TLV payload (all tags except DER_SIGNATURE)
+  const tokenIdBuf = Buffer.from(
+    BigInt(tokenId).toString(16).padStart(64, "0"),
+    "hex"
+  );
+  const chainIdBuf = Buffer.alloc(8);
+  chainIdBuf.writeBigUInt64BE(BigInt(chainId));
+  const issuedAtBuf = Buffer.alloc(4);
+  issuedAtBuf.writeUInt32BE(now);
+  const expiresAtBuf = Buffer.alloc(4);
+  expiresAtBuf.writeUInt32BE(expiresAt);
+
+  let payload = Buffer.concat([
+    tlvField(TAG.STRUCT_TYPE, Buffer.from([MCP_STRUCT_TYPE])),
+    tlvField(TAG.STRUCT_VERSION, Buffer.from([MCP_STRUCT_VERSION])),
+    tlvField(TAG.CHAIN_ID, chainIdBuf),
+    tlvField(TAG.TOKEN_ID, tokenIdBuf),
+    tlvField(TAG.ISSUED_AT, issuedAtBuf),
+    tlvField(TAG.EXPIRES_AT, expiresAtBuf),
+    tlvField(TAG.ATTESTER_ID, Buffer.from([0x00])),
+    tlvField(TAG.MARKET_NAME, Buffer.from(marketName.slice(0, 128))),
+    tlvField(TAG.MARKET_OUTCOME, Buffer.from(marketOutcome.slice(0, 16))),
+    tlvField(TAG.MARKET_AMOUNT, Buffer.from(marketAmount.slice(0, 32))),
+  ]);
+
+  // Sign SHA-256(payload) with SECP256K1 private key (DER format)
+  const privKeyPem = process.env.MCP_ATTESTER_PRIVATE_KEY_PEM;
+  if (!privKeyPem) {
+    return res.status(500).json({ error: "Attester key not configured" });
+  }
+  // Support pipe-separated PEM (for single-line env vars)
+  const pemContent = privKeyPem.replace(/\|/g, "\n");
+  const hash = createHash("sha256").update(payload).digest();
+  const sign = createSign("SHA256");
+  sign.update(hash);
+  const sig = sign.sign(pemContent);
+
+  payload = Buffer.concat([payload, tlvField(TAG.DER_SIGNATURE, sig)]);
+
+  return res.status(200).json({ payload: payload.toString("hex") });
+}

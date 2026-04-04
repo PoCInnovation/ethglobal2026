@@ -29,6 +29,9 @@ contract PolymarketOracle {
     /// @notice Authorized CRE workflow name (bytes10, left-padded)
     bytes10 public immutable EXPECTED_WORKFLOW_NAME;
 
+    /// @notice Admin address allowed to call updateMarketsDirect (for hackathon / pre-DON)
+    address public immutable ADMIN;
+
     /// @notice conditionId → MarketInfo
     mapping(bytes32 => MarketInfo) public markets;
 
@@ -47,14 +50,16 @@ contract PolymarketOracle {
 
     error InvalidAuthor(address received, address expected);
     error InvalidWorkflowName(bytes10 received, bytes10 expected);
+    error Unauthorized();
 
     // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
 
-    constructor(address workflowOwner, bytes10 workflowName) {
+    constructor(address workflowOwner, bytes10 workflowName, address admin) {
         EXPECTED_AUTHOR = workflowOwner;
         EXPECTED_WORKFLOW_NAME = workflowName;
+        ADMIN = admin;
     }
 
     // -------------------------------------------------------------------------
@@ -81,6 +86,17 @@ contract PolymarketOracle {
         MarketInfo[] memory incoming = abi.decode(report[4:], (MarketInfo[]));
 
         // 3. Store markets
+        _storeMarkets(incoming);
+    }
+
+    // -------------------------------------------------------------------------
+    // Admin direct update (hackathon — bypasses DON, admin-only)
+    // -------------------------------------------------------------------------
+
+    /// @notice Allows the admin to push market data directly (no DON signature needed).
+    ///         In production, this would be removed and only onReport would be used.
+    function updateMarketsDirect(MarketInfo[] calldata incoming) external {
+        if (msg.sender != ADMIN) revert Unauthorized();
         _storeMarkets(incoming);
     }
 

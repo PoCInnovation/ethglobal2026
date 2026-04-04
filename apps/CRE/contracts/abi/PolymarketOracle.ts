@@ -44,6 +44,29 @@ export const PolymarketOracleABI = [
 	},
 
 	// -------------------------------------------------------------------------
+	// Admin direct update (hackathon)
+	// -------------------------------------------------------------------------
+	{
+		name: 'updateMarketsDirect',
+		type: 'function',
+		stateMutability: 'nonpayable',
+		inputs: [
+			{
+				name: 'incoming',
+				type: 'tuple[]',
+				components: [
+					{ name: 'conditionId', type: 'bytes32' },
+					{ name: 'question', type: 'string' },
+					{ name: 'endDate', type: 'uint256' },
+					{ name: 'active', type: 'bool' },
+					{ name: 'lastUpdate', type: 'uint256' },
+				],
+			},
+		],
+		outputs: [],
+	},
+
+	// -------------------------------------------------------------------------
 	// Read helpers
 	// -------------------------------------------------------------------------
 	{
@@ -97,6 +120,13 @@ export const PolymarketOracleABI = [
 		inputs: [],
 		outputs: [{ name: '', type: 'bytes10' }],
 	},
+	{
+		name: 'ADMIN',
+		type: 'function',
+		stateMutability: 'view',
+		inputs: [],
+		outputs: [{ name: '', type: 'address' }],
+	},
 
 	// -------------------------------------------------------------------------
 	// Events
@@ -129,5 +159,10 @@ export const PolymarketOracleABI = [
 			{ name: 'received', type: 'bytes10' },
 			{ name: 'expected', type: 'bytes10' },
 		],
+	},
+	{
+		name: 'Unauthorized',
+		type: 'error',
+		inputs: [],
 	},
 ] as const
