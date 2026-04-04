@@ -42,7 +42,9 @@ function PayPage() {
 		account.toLowerCase() === intent.userId.toLowerCase();
 
 	const isPending = intent?.status === "pending";
-	const isX402 = !!intent?.details.x402?.accepted;
+	const isTransfer = intent?.details.type === "transfer";
+	const isPolymarket = intent?.details.type === "polymarket_trade";
+	const isX402 = isTransfer && !!(intent?.details as { x402?: { accepted?: unknown } })?.x402?.accepted;
 
 	return (
 		<div className="flex flex-col items-center gap-32">
@@ -94,7 +96,7 @@ function PayPage() {
 									<div className="flex flex-col items-center gap-16 rounded-lg bg-muted-transparent p-24">
 										<div className="flex flex-col items-center gap-8">
 											<h3 className="heading-5-semi-bold text-base">
-												Connect your Ledger to {isX402 ? "authorize" : "sign"}
+												Connect your Ledger to {isX402 ? "authorize" : isPolymarket ? "confirm trade" : "sign"}
 											</h3>
 											<p className="body-2 text-muted text-center">
 												This payment requires your hardware wallet signature.

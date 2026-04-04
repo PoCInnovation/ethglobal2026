@@ -11,7 +11,7 @@ export declare const INTENT_TRANSITIONS: Record<IntentStatus, IntentStatus[]>;
  * Check if a status transition is valid according to the state machine.
  */
 export declare function isValidTransition(from: IntentStatus, to: IntentStatus): boolean;
-export type IntentType = "transfer" | "swap" | "nft" | "contract";
+export type IntentType = "transfer" | "polymarket_trade" | "swap" | "nft" | "contract";
 export type IntentUrgency = "low" | "normal" | "high" | "critical";
 export type PaymentCategory = "api_payment" | "subscription" | "purchase" | "p2p_transfer" | "defi" | "bill_payment" | "donation" | "other";
 export interface Merchant {
@@ -109,6 +109,19 @@ export interface X402Context {
     /** ISO timestamp when the x402 authorization expires (derived from validBefore) */
     expiresAt?: string;
 }
+export interface PolymarketTradeDetails {
+    type: "polymarket_trade";
+    conditionId: string;
+    marketTitle: string;
+    outcome: "Yes" | "No";
+    amount: string;
+    outcomePrice?: number;
+    chainId: 137;
+    memo?: string;
+}
+export type IntentDetails = TransferIntent | PolymarketTradeDetails;
+export declare function isPolymarketTrade(d: IntentDetails): d is PolymarketTradeDetails;
+export declare function isTransferIntent(d: IntentDetails): d is TransferIntent;
 export interface TransferIntent {
     type: "transfer";
     token: string;
@@ -130,7 +143,7 @@ export interface Intent {
     userId: string;
     agentId: string;
     agentName: string;
-    details: TransferIntent;
+    details: IntentDetails;
     urgency: IntentUrgency;
     status: IntentStatus;
     trustChainId?: string;
@@ -176,7 +189,7 @@ export interface RegisterAgentResponse {
 export interface CreateIntentRequest {
     agentId: string;
     agentName: string;
-    details: TransferIntent;
+    details: IntentDetails;
     urgency?: IntentUrgency;
     expiresInMinutes?: number;
 }
@@ -193,6 +206,11 @@ export interface IntentWebhook {
     timestamp: string;
 }
 export declare const SUPPORTED_CHAINS: {
+    readonly 137: {
+        readonly name: "Polygon";
+        readonly symbol: "MATIC";
+        readonly explorer: "https://polygonscan.com";
+    };
     readonly 8453: {
         readonly name: "Base";
         readonly symbol: "ETH";
@@ -247,4 +265,15 @@ export declare function formatAtomicAmount(atomicAmount: string, decimals: numbe
  * Returns the raw string if parsing fails.
  */
 export declare function extractDomain(url: string): string;
+export declare const POLYMARKET_CONFIG: {
+    readonly GAMMA_API_BASE: "https://gamma-api.polymarket.com";
+    /** PolyProxy contract — override via POLY_PROXY_ADDRESS / VITE_POLY_PROXY_ADDRESS env var */
+    readonly POLY_PROXY_ADDRESS: `0x${string}`;
+    /** Oracle CRE contract — override via ORACLE_CRE_ADDRESS / VITE_ORACLE_CRE_ADDRESS env var */
+    readonly ORACLE_CRE_ADDRESS: `0x${string}`;
+    /** Polymarket CTF Exchange on Polygon */
+    readonly CTF_EXCHANGE: `0x${string}`;
+    /** Polygon chainId used by Polymarket */
+    readonly CHAIN_ID: 137;
+};
 //# sourceMappingURL=index.d.ts.map

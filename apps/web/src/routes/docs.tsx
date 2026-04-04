@@ -151,6 +151,13 @@ function DocsPage() {
 					</div>
 					<div>
 						<h4 className="body-4-semi-bold text-muted-subtle uppercase tracking-wider mb-8 px-12">
+							Polymarket
+						</h4>
+						<NavLink href="#polymarket-search">Search Markets</NavLink>
+						<NavLink href="#polymarket-trade">Create Trade</NavLink>
+					</div>
+					<div>
+						<h4 className="body-4-semi-bold text-muted-subtle uppercase tracking-wider mb-8 px-12">
 							x402 & Advanced
 						</h4>
 						<NavLink href="#x402-flow">x402 Payment Flow</NavLink>
@@ -406,9 +413,9 @@ function DocsPage() {
 							/>
 							<Param
 								name="details"
-								type="TransferIntent"
+								type="TransferIntent | PolymarketTradeDetails"
 								required
-								description="The transaction details (see schema below)"
+								description="Transaction details — discriminated by details.type ('transfer' or 'polymarket_trade')"
 							/>
 							<Param
 								name="urgency"
@@ -452,7 +459,7 @@ function DocsPage() {
 								name="chainId"
 								type="number"
 								required
-								description="Chain ID: 8453 (Base), 11155111 (Sepolia), 84532 (Base Sepolia)"
+								description="Chain ID: 8453 (Base), 137 (Polygon), 11155111 (Sepolia), 84532 (Base Sepolia)"
 							/>
 							<Param
 								name="memo"
@@ -853,6 +860,171 @@ any non-terminal → failed`}
 					/>
 				</Section>
 
+				{/* Polymarket: Search Markets */}
+				<Section id="polymarket-search" title="Polymarket: Search Markets">
+					<p className="body-1 text-base">
+						Discover active Polymarket prediction markets. Agents use this to find{" "}
+						<code className="bg-muted px-4 py-2 rounded-xs text-accent">conditionId</code>s before
+						creating <code className="bg-muted px-4 py-2 rounded-xs text-accent">polymarket_trade</code>{" "}
+						intents.
+					</p>
+
+					<Endpoint
+						method="GET"
+						path="/api/polymarket/markets?q=...&limit=..."
+						description="Search active markets on Polymarket (no auth required)."
+					/>
+
+					<Subsection id="polymarket-search-params" title="Query Parameters">
+						<div className="rounded-lg p-16 bg-[#0d1117]">
+							<Param
+								name="q"
+								type="string"
+								description="Search query — matches against market question text (all terms must match)"
+							/>
+							<Param
+								name="limit"
+								type="number"
+								description="Max results to return (1–50, default: 10)"
+							/>
+						</div>
+					</Subsection>
+
+					<Subsection id="polymarket-search-example" title="Example">
+						<CodeBlock language="bash" title="Search for markets about Trump">
+							{`curl "https://agent-intents-web.vercel.app/api/polymarket/markets?q=trump&limit=5"`}
+						</CodeBlock>
+						<CodeBlock language="json" title="Response">
+							{`{
+  "success": true,
+  "markets": [
+    {
+      "conditionId": "0xabc123...",
+      "question": "Will Trump win the 2028 Republican primary?",
+      "yesPrice": 0.65,
+      "noPrice": 0.35,
+      "volume": 1234567,
+      "endDate": "2028-01-15T00:00:00.000Z",
+      "active": true
+    }
+  ]
+}`}
+						</CodeBlock>
+					</Subsection>
+				</Section>
+
+				{/* Polymarket: Create Trade */}
+				<Section id="polymarket-trade" title="Polymarket: Create Trade Intent">
+					<p className="body-1 text-base">
+						Take a position on a Polymarket prediction market. The agent creates a{" "}
+						<code className="bg-muted px-4 py-2 rounded-xs text-accent">polymarket_trade</code> intent
+						which the human reviews and signs on their Ledger.
+					</p>
+
+					<Subsection id="polymarket-trade-body" title="Request Body (details)">
+						<div className="rounded-lg p-16 bg-[#0d1117]">
+							<Param name="type" type="string" required description='Must be "polymarket_trade"' />
+							<Param
+								name="conditionId"
+								type="string"
+								required
+								description="Market condition ID from search results (0x-prefixed bytes32)"
+							/>
+							<Param
+								name="marketTitle"
+								type="string"
+								description="Automatically enriched from Gamma API if omitted"
+							/>
+							<Param
+								name="outcome"
+								type="string"
+								required
+								description='"Yes" or "No"'
+							/>
+							<Param
+								name="amount"
+								type="string"
+								required
+								description="USDC amount to trade (e.g., '10', '50.5')"
+							/>
+							<Param
+								name="chainId"
+								type="number"
+								required
+								description="Must be 137 (Polygon)"
+							/>
+							<Param
+								name="memo"
+								type="string"
+								description="Agent justification for the trade"
+							/>
+						</div>
+					</Subsection>
+
+					<Subsection id="polymarket-trade-example" title="Full Example">
+						<CodeBlock language="bash" title="Create a Polymarket trade intent">
+							{`curl -X POST https://agent-intents-web.vercel.app/api/intents \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: AgentAuth <timestamp>.<bodyHash>.<signature>" \\
+  -d '{
+    "agentId": "prediction-bot",
+    "agentName": "Prediction Agent",
+    "details": {
+      "type": "polymarket_trade",
+      "conditionId": "0xabc123...",
+      "outcome": "Yes",
+      "amount": "50",
+      "chainId": 137,
+      "memo": "High confidence based on polling data"
+    },
+    "urgency": "normal",
+    "expiresInMinutes": 60
+  }'`}
+						</CodeBlock>
+					</Subsection>
+
+					<Subsection id="polymarket-trade-flow" title="Trade Flow">
+						<div className="space-y-8">
+							<div className="flex items-start gap-12 p-12 rounded-md bg-muted">
+								<span className="body-1-semi-bold text-accent w-24 text-center">1</span>
+								<p className="body-2 text-base flex-1">
+									<strong>Search</strong> markets via{" "}
+									<code className="bg-[#21262d] px-4 py-2 rounded-xs">GET /api/polymarket/markets?q=...</code>{" "}
+									to find the <code className="bg-[#21262d] px-4 py-2 rounded-xs">conditionId</code>
+								</p>
+							</div>
+							<div className="flex items-start gap-12 p-12 rounded-md bg-muted">
+								<span className="body-1-semi-bold text-accent w-24 text-center">2</span>
+								<p className="body-2 text-base flex-1">
+									<strong>Create intent</strong> with{" "}
+									<code className="bg-[#21262d] px-4 py-2 rounded-xs">type: "polymarket_trade"</code> — the
+									server enriches with live market title and price
+								</p>
+							</div>
+							<div className="flex items-start gap-12 p-12 rounded-md bg-muted">
+								<span className="body-1-semi-bold text-accent w-24 text-center">3</span>
+								<p className="body-2 text-base flex-1">
+									<strong>Share the paymentUrl</strong> — human reviews the market, outcome, and amount
+								</p>
+							</div>
+							<div className="flex items-start gap-12 p-12 rounded-md bg-muted">
+								<span className="body-1-semi-bold text-accent w-24 text-center">4</span>
+								<p className="body-2 text-base flex-1">
+									<strong>Human signs</strong> the PolyProxy transaction on Ledger (Polygon network)
+								</p>
+							</div>
+							<div className="flex items-start gap-12 p-12 rounded-md bg-muted">
+								<span className="body-1-semi-bold text-accent w-24 text-center">5</span>
+								<p className="body-2 text-base flex-1">
+									<strong>Poll</strong> until status ={" "}
+									<code className="bg-[#21262d] px-4 py-2 rounded-xs">confirmed</code> or{" "}
+									<code className="bg-[#21262d] px-4 py-2 rounded-xs">failed</code>
+								</p>
+							</div>
+						</div>
+					</Subsection>
+				</Section>
+
 				{/* x402 Payment Flow */}
 				<Section id="x402-flow" title="x402 Payment Flow">
 					<p className="body-1 text-base">
@@ -1084,7 +1256,7 @@ done`}
   agentId: string;               // Agent that created the intent
   agentName: string;             // Agent display name
   
-  details: TransferIntent;       // Transaction details
+  details: IntentDetails;        // TransferIntent | PolymarketTradeDetails
   urgency: IntentUrgency;        // "low" | "normal" | "high" | "critical"
   status: IntentStatus;          // Current status in lifecycle
   
@@ -1123,7 +1295,7 @@ done`}
   amountWei?: string;            // Wei amount for precision
   recipient: string;             // Destination address
   recipientEns?: string;         // ENS name if resolved
-  chainId: number;               // Chain ID (8453, 11155111, 84532)
+  chainId: number;               // Chain ID (8453, 11155111, 84532, 137)
   memo?: string;                 // Human-readable reason
   
   // x402-aligned fields
@@ -1131,6 +1303,24 @@ done`}
   category?: PaymentCategory;    // Payment category
   x402?: X402Context;            // Full x402 payment context
 }`}
+						</CodeBlock>
+					</Subsection>
+
+					<Subsection id="polymarket-trade-type" title="PolymarketTradeDetails Object">
+						<CodeBlock language="typescript" title="PolymarketTradeDetails Type">
+							{`interface PolymarketTradeDetails {
+  type: "polymarket_trade";      // Intent type
+  conditionId: string;           // Polymarket market condition ID (bytes32)
+  marketTitle: string;           // Market question (enriched by server)
+  outcome: "Yes" | "No";        // Position to take
+  amount: string;                // USDC amount to trade
+  outcomePrice?: number;         // Current price (0–1, enriched by server)
+  chainId: 137;                  // Always Polygon
+  memo?: string;                 // Agent justification
+}
+
+// Intent.details is a discriminated union:
+type IntentDetails = TransferIntent | PolymarketTradeDetails;`}
 						</CodeBlock>
 					</Subsection>
 
@@ -1346,9 +1536,14 @@ done`}
 									/openapi.json
 								</a>
 								{" | "}
+								Agent context:{" "}
+								<a href="/agent-context.json" className="text-accent hover:underline">
+									/agent-context.json
+								</a>
+								{" | "}
 								Static HTML docs:{" "}
-								<a href="/docs" className="text-accent hover:underline">
-									/docs
+								<a href="/agent-context/index.html" className="text-accent hover:underline">
+									/agent-context
 								</a>
 							</p>
 						</div>

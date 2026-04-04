@@ -49,28 +49,36 @@ function AgentContextPage() {
 			{/* Sidebar Navigation */}
 			<nav className="hidden lg:block w-[220px] flex-shrink-0 sticky top-24 h-fit">
 				<div className="space-y-24">
-					<div>
-						<h4 className="body-4-semi-bold text-muted-subtle uppercase tracking-wider mb-8 px-12">
-							Getting Started
-						</h4>
-						<NavLink href="#credential-file">Credential File</NavLink>
-						<NavLink href="#agentauth-header">AgentAuth Header</NavLink>
-						<NavLink href="#send-intent">Send an Intent</NavLink>
-						<NavLink href="#poll">Poll for Completion</NavLink>
-					</div>
-					<div>
-						<h4 className="body-4-semi-bold text-muted-subtle uppercase tracking-wider mb-8 px-12">
-							Example
-						</h4>
-						<NavLink href="#complete-example">Complete Bash Script</NavLink>
-					</div>
-					<div>
-						<h4 className="body-4-semi-bold text-muted-subtle uppercase tracking-wider mb-8 px-12">
-							Reference
-						</h4>
-						<NavLink href="#supported-chains">Supported Chains</NavLink>
-						<NavLink href="#troubleshooting">Troubleshooting</NavLink>
-					</div>
+				<div>
+					<h4 className="body-4-semi-bold text-muted-subtle uppercase tracking-wider mb-8 px-12">
+						Getting Started
+					</h4>
+					<NavLink href="#credential-file">Credential File</NavLink>
+					<NavLink href="#agentauth-header">AgentAuth Header</NavLink>
+					<NavLink href="#send-intent">Send a Transfer Intent</NavLink>
+					<NavLink href="#poll">Poll for Completion</NavLink>
+				</div>
+				<div>
+					<h4 className="body-4-semi-bold text-muted-subtle uppercase tracking-wider mb-8 px-12">
+						Polymarket
+					</h4>
+					<NavLink href="#search-markets">Search Markets</NavLink>
+					<NavLink href="#polymarket-trade">Create a Trade</NavLink>
+				</div>
+				<div>
+					<h4 className="body-4-semi-bold text-muted-subtle uppercase tracking-wider mb-8 px-12">
+						Examples
+					</h4>
+					<NavLink href="#complete-example">Transfer Script</NavLink>
+					<NavLink href="#polymarket-example">Polymarket Script</NavLink>
+				</div>
+				<div>
+					<h4 className="body-4-semi-bold text-muted-subtle uppercase tracking-wider mb-8 px-12">
+						Reference
+					</h4>
+					<NavLink href="#supported-chains">Supported Chains</NavLink>
+					<NavLink href="#troubleshooting">Troubleshooting</NavLink>
+				</div>
 				</div>
 			</nav>
 
@@ -230,8 +238,8 @@ function AgentContextPage() {
 					</p>
 				</Section>
 
-				{/* 3. Send an Intent */}
-				<Section id="send-intent" title="3. Send an Intent">
+			{/* 3. Send a Transfer Intent */}
+			<Section id="send-intent" title="3. Send a Transfer Intent">
 					<p className="body-2 text-muted">
 						<strong>
 							<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
@@ -297,8 +305,202 @@ function AgentContextPage() {
 					</p>
 				</Section>
 
-				{/* Complete Example */}
-				<Section id="complete-example" title="Complete Example">
+			{/* 5. Polymarket: Search Markets */}
+			<Section id="search-markets" title="5. Polymarket: Search Markets">
+				<p className="body-2 text-muted">
+					<strong>
+						<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
+							{"GET https://www.agentintents.io/api/polymarket/markets?q=<search>&limit=<n>"}
+						</code>
+					</strong>
+				</p>
+				<p className="body-2 text-muted">
+					No authentication required. Use this endpoint to find Polymarket markets by keyword
+					before creating a trade intent.
+				</p>
+
+				<h3 className="heading-5-semi-bold text-base">Parameters</h3>
+				<div className="overflow-x-auto">
+					<table className="w-full border-collapse">
+						<thead>
+							<tr className="border-b border-muted">
+								<th className="text-left body-3-semi-bold text-muted-subtle py-8 pr-16">Parameter</th>
+								<th className="text-left body-3-semi-bold text-muted-subtle py-8 pr-16">Type</th>
+								<th className="text-left body-3-semi-bold text-muted-subtle py-8 pr-16">Default</th>
+								<th className="text-left body-3-semi-bold text-muted-subtle py-8">Description</th>
+							</tr>
+						</thead>
+						<tbody className="body-2 text-muted">
+							<tr className="border-b border-muted/50">
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">q</code>
+								</td>
+								<td className="py-8 pr-16">string</td>
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">{`""`}</code>
+								</td>
+								<td className="py-8">
+									Search keyword (e.g. "bitcoin", "trump", "ethereum")
+								</td>
+							</tr>
+							<tr className="border-b border-muted/50">
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">limit</code>
+								</td>
+								<td className="py-8 pr-16">number</td>
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">10</code>
+								</td>
+								<td className="py-8">Max results (1–50)</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+
+				<h3 className="heading-5-semi-bold text-base">Example request</h3>
+				<CodeBlock language="bash" title="Search markets">
+					{`curl -s "https://www.agentintents.io/api/polymarket/markets?q=bitcoin&limit=5" | jq .`}
+				</CodeBlock>
+
+				<h3 className="heading-5-semi-bold text-base">Response</h3>
+				<CodeBlock language="json" title="Response">
+					{`{
+  "success": true,
+  "markets": [
+    {
+      "conditionId": "0xabc123...",
+      "question": "Will Bitcoin hit $100k by July 2026?",
+      "yesPrice": 0.65,
+      "noPrice": 0.35,
+      "volume": 1250000,
+      "endDate": "2026-07-01T00:00:00.000Z",
+      "active": true
+    }
+  ]
+}`}
+				</CodeBlock>
+
+				<p className="body-2 text-muted">
+					Use the{" "}
+					<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">conditionId</code> from
+					the search result to create a Polymarket trade intent.
+				</p>
+			</Section>
+
+			{/* 6. Polymarket: Create a Trade Intent */}
+			<Section id="polymarket-trade" title="6. Polymarket: Create a Trade Intent">
+				<p className="body-2 text-muted">
+					<strong>
+						<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
+							POST https://www.agentintents.io/api/intents
+						</code>
+					</strong>
+				</p>
+
+				<h3 className="heading-5-semi-bold text-base">Request body</h3>
+				<CodeBlock language="json" title="Compact JSON body">
+					{
+						'{"agentId":"my-agent","agentName":"My Agent","details":{"type":"polymarket_trade","conditionId":"0xabc123...","outcome":"Yes","amount":"50","chainId":137,"memo":"I believe this outcome is likely based on current analysis"},"urgency":"normal","expiresInMinutes":60}'
+					}
+				</CodeBlock>
+
+				<h3 className="heading-5-semi-bold text-base">Fields</h3>
+				<div className="overflow-x-auto">
+					<table className="w-full border-collapse">
+						<thead>
+							<tr className="border-b border-muted">
+								<th className="text-left body-3-semi-bold text-muted-subtle py-8 pr-16">Field</th>
+								<th className="text-left body-3-semi-bold text-muted-subtle py-8 pr-16">Type</th>
+								<th className="text-left body-3-semi-bold text-muted-subtle py-8 pr-16">Required</th>
+								<th className="text-left body-3-semi-bold text-muted-subtle py-8">Description</th>
+							</tr>
+						</thead>
+						<tbody className="body-2 text-muted">
+							<tr className="border-b border-muted/50">
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">type</code>
+								</td>
+								<td className="py-8 pr-16">string</td>
+								<td className="py-8 pr-16">Yes</td>
+								<td className="py-8">
+									Must be{" "}
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
+										"polymarket_trade"
+									</code>
+								</td>
+							</tr>
+							<tr className="border-b border-muted/50">
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
+										conditionId
+									</code>
+								</td>
+								<td className="py-8 pr-16">string</td>
+								<td className="py-8 pr-16">Yes</td>
+								<td className="py-8">Polymarket condition ID (from search endpoint)</td>
+							</tr>
+							<tr className="border-b border-muted/50">
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">outcome</code>
+								</td>
+								<td className="py-8 pr-16">string</td>
+								<td className="py-8 pr-16">Yes</td>
+								<td className="py-8">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">"Yes"</code> or{" "}
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">"No"</code>
+								</td>
+							</tr>
+							<tr className="border-b border-muted/50">
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">amount</code>
+								</td>
+								<td className="py-8 pr-16">string</td>
+								<td className="py-8 pr-16">Yes</td>
+								<td className="py-8">Amount in USDC (e.g. "50", "100.50")</td>
+							</tr>
+							<tr className="border-b border-muted/50">
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">chainId</code>
+								</td>
+								<td className="py-8 pr-16">number</td>
+								<td className="py-8 pr-16">Yes</td>
+								<td className="py-8">
+									Must be{" "}
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">137</code>{" "}
+									(Polygon)
+								</td>
+							</tr>
+							<tr className="border-b border-muted/50">
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">memo</code>
+								</td>
+								<td className="py-8 pr-16">string</td>
+								<td className="py-8 pr-16">No</td>
+								<td className="py-8">
+									Agent's justification for the trade (shown to the human)
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+
+				<p className="body-2 text-muted">
+					The backend automatically enriches the intent with the market title (
+					<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">marketTitle</code>) and
+					current outcome price (
+					<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">outcomePrice</code>)
+					from the Polymarket Gamma API.
+				</p>
+
+				<p className="body-2 text-muted">
+					Response has the same structure as a transfer intent — includes{" "}
+					<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">paymentUrl</code> for
+					the human to review and sign.
+				</p>
+			</Section>
+
+			{/* Complete Example: Transfer */}
+			<Section id="complete-example" title="Complete Example: Transfer">
 					<CodeBlock language="bash" title="create-intent.sh">
 						{`#!/usr/bin/env bash
 set -euo pipefail
@@ -375,8 +577,83 @@ echo "Final status: $STATUS"`}
 					</div>
 				</Section>
 
-				{/* Supported Chains */}
-				<Section id="supported-chains" title="Supported Chains">
+			{/* Complete Example: Polymarket Trade */}
+			<Section id="polymarket-example" title="Complete Example: Polymarket Trade">
+				<CodeBlock language="bash" title="polymarket-trade.sh">
+					{`#!/usr/bin/env bash
+set -euo pipefail
+
+CREDENTIAL_FILE="agent-credential.json"
+PRIVATE_KEY=$(jq -r '.privateKey' "$CREDENTIAL_FILE")
+AGENT_LABEL=$(jq -r '.label' "$CREDENTIAL_FILE")
+BASE_URL="https://www.agentintents.io"
+
+# ── 1. Search for a market ──────────────────────────────────────
+echo "Searching for markets..."
+MARKETS=$(curl -s "\${BASE_URL}/api/polymarket/markets?q=bitcoin&limit=5")
+echo "$MARKETS" | jq '.markets[] | {conditionId, question, yesPrice, noPrice}'
+
+# Pick the first result (in practice, choose the most relevant)
+CONDITION_ID=$(echo "$MARKETS" | jq -r '.markets[0].conditionId')
+echo "Selected conditionId: $CONDITION_ID"
+
+# ── 2. Build the polymarket_trade intent body ───────────────────
+BODY=$(jq -cn \\
+  --arg agentName "$AGENT_LABEL" \\
+  --arg conditionId "$CONDITION_ID" \\
+  '{
+    agentId: "my-agent",
+    agentName: $agentName,
+    details: {
+      type: "polymarket_trade",
+      conditionId: $conditionId,
+      outcome: "Yes",
+      amount: "50",
+      chainId: 137,
+      memo: "Based on current market analysis"
+    },
+    urgency: "normal",
+    expiresInMinutes: 60
+  }')
+
+# ── 3. Compute auth header ──────────────────────────────────────
+TIMESTAMP=$(date +%s)
+BODY_HASH=$(cast keccak "$BODY")
+SIGNATURE=$(cast wallet sign --private-key "$PRIVATE_KEY" "\${TIMESTAMP}.\${BODY_HASH}")
+
+# ── 4. Send intent ──────────────────────────────────────────────
+RESPONSE=$(curl -s -X POST "\${BASE_URL}/api/intents" \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: AgentAuth \${TIMESTAMP}.\${BODY_HASH}.\${SIGNATURE}" \\
+  -d "$BODY")
+
+echo "$RESPONSE" | jq .
+
+PAYMENT_URL=$(echo "$RESPONSE" | jq -r '.paymentUrl')
+echo ""
+echo "Share this link with the human to review and sign: $PAYMENT_URL"
+
+# ── 5. Poll for completion ──────────────────────────────────────
+INTENT_ID=$(echo "$RESPONSE" | jq -r '.intent.id')
+STATUS="pending"
+
+for i in $(seq 1 120); do
+  case "$STATUS" in confirmed|rejected|failed|expired) break ;; esac
+  sleep 30
+  POLL_TS=$(date +%s)
+  POLL_SIG=$(cast wallet sign --private-key "$PRIVATE_KEY" "\${POLL_TS}.0x")
+  STATUS=$(curl -s "\${BASE_URL}/api/intents/\${INTENT_ID}" \\
+    -H "Authorization: AgentAuth \${POLL_TS}.0x.\${POLL_SIG}" \\
+    | jq -r '.intent.status')
+  echo "Poll $i: status=$STATUS"
+done
+
+echo "Final status: $STATUS"`}
+				</CodeBlock>
+			</Section>
+
+			{/* Supported Chains */}
+			<Section id="supported-chains" title="Supported Chains">
 					<div className="overflow-x-auto">
 						<table className="w-full border-collapse">
 							<thead>
@@ -406,20 +683,28 @@ echo "Final status: $STATUS"`}
 									<td className="py-8 pr-16">USDC</td>
 									<td className="py-8">Testnet</td>
 								</tr>
-								<tr className="border-b border-muted/50">
-									<td className="py-8 pr-16">
-										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">11155111</code>
-									</td>
-									<td className="py-8 pr-16">Sepolia</td>
-									<td className="py-8 pr-16">USDC</td>
-									<td className="py-8">Testnet</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-				</Section>
+							<tr className="border-b border-muted/50">
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">11155111</code>
+								</td>
+								<td className="py-8 pr-16">Sepolia</td>
+								<td className="py-8 pr-16">USDC</td>
+								<td className="py-8">Testnet</td>
+							</tr>
+							<tr className="border-b border-muted/50">
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">137</code>
+								</td>
+								<td className="py-8 pr-16">Polygon</td>
+								<td className="py-8 pr-16">USDC</td>
+								<td className="py-8">Polymarket trades only</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</Section>
 
-				{/* Troubleshooting */}
+			{/* Troubleshooting */}
 				<Section id="troubleshooting" title="Troubleshooting">
 					<div className="overflow-x-auto">
 						<table className="w-full border-collapse">
@@ -460,19 +745,48 @@ echo "Final status: $STATUS"`}
 										Ensure your system clock is accurate (within 5 minutes of server time)
 									</td>
 								</tr>
-								<tr className="border-b border-muted/50">
-									<td className="py-8 pr-16">
-										<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
-											401 Authentication failed
-										</code>
-									</td>
-									<td className="py-8 pr-16">Body hash mismatch</td>
-									<td className="py-8">
-										Ensure you hash the <strong>exact</strong> bytes sent as the request body
-										(compact JSON, no trailing newline)
-									</td>
-								</tr>
-							</tbody>
+							<tr className="border-b border-muted/50">
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
+										401 Authentication failed
+									</code>
+								</td>
+								<td className="py-8 pr-16">Body hash mismatch</td>
+								<td className="py-8">
+									Ensure you hash the <strong>exact</strong> bytes sent as the request body
+									(compact JSON, no trailing newline)
+								</td>
+							</tr>
+							<tr className="border-b border-muted/50">
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
+										400 Market not found
+									</code>
+								</td>
+								<td className="py-8 pr-16">
+									Invalid{" "}
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
+										conditionId
+									</code>
+								</td>
+								<td className="py-8">
+									Use the search endpoint (
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
+										GET /api/polymarket/markets?q=...
+									</code>
+									) to find valid condition IDs
+								</td>
+							</tr>
+							<tr className="border-b border-muted/50">
+								<td className="py-8 pr-16">
+									<code className="px-4 py-2 rounded-xs bg-muted text-base body-3">
+										400 Market is no longer active
+									</code>
+								</td>
+								<td className="py-8 pr-16">Market has closed or expired</td>
+								<td className="py-8">Search for a different active market</td>
+							</tr>
+						</tbody>
 						</table>
 					</div>
 				</Section>

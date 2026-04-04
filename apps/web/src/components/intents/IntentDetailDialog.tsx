@@ -30,8 +30,14 @@ export function IntentDetailDialog({ intent, open, onOpenChange }: IntentDetailD
 	if (!intent) return null;
 
 	const handleClose = () => onOpenChange(false);
-	const isX402 = !!intent.details.x402?.accepted;
-	const dialogTitle = isX402 ? "Authorize API Payment" : "Review Transfer";
+	const isTransfer = intent.details.type === "transfer";
+	const isX402 = isTransfer && !!(intent.details as { x402?: { accepted?: unknown } }).x402?.accepted;
+	const isPolymarket = intent.details.type === "polymarket_trade";
+	const dialogTitle = isPolymarket
+		? "Review Polymarket Trade"
+		: isX402
+			? "Authorize API Payment"
+			: "Review Transfer";
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>

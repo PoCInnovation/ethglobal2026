@@ -11,11 +11,15 @@ import {
 import { useUpdateIntentStatus } from "@/queries/intents";
 import {
 	type Intent,
+	type TransferIntent,
 	SUPPORTED_CHAINS,
 	SUPPORTED_TOKENS,
 	type SupportedChainId,
 	type X402PaymentPayload,
+	isPolymarketTrade,
+	isTransferIntent,
 } from "@agent-intents/shared";
+import { buildPolymarketTx } from "@/lib/polymarket";
 import { Button } from "@ledgerhq/lumen-ui-react";
 import { useState } from "react";
 import { verifyTypedData } from "viem";
@@ -119,7 +123,32 @@ function ChainLogo({ chainId, className }: { chainId: number; className?: string
 		);
 	}
 
-	// Unknown chain fallback
+	if (chainId === 137) {
+		return (
+			<div
+				className={cn(
+					"flex items-center justify-center size-32 rounded-full bg-[#8247E5]",
+					className,
+				)}
+				title="Polygon"
+			>
+				<svg
+					aria-hidden="true"
+					width="16"
+					height="16"
+					viewBox="0 0 38 33"
+					fill="none"
+					xmlns="http://www.w3.org/2000/svg"
+				>
+					<path
+						d="M29.4 11.7c-.8-.5-1.8-.5-2.5 0l-5.8 3.4-4 2.2-5.8 3.4c-.8.5-1.8.5-2.5 0l-4.6-2.7c-.8-.5-1.2-1.3-1.2-2.2v-5.3c0-.9.5-1.7 1.2-2.2l4.5-2.6c.8-.5 1.8-.5 2.5 0l4.5 2.6c.8.5 1.2 1.3 1.2 2.2v3.4l4-2.3v-3.4c0-.9-.5-1.7-1.2-2.2L12.8.5c-.8-.5-1.8-.5-2.5 0L3 4.1C2.2 4.6 1.8 5.4 1.8 6.3v7.1c0 .9.5 1.7 1.2 2.2l7 4c.8.5 1.8.5 2.5 0l5.8-3.3 4-2.3 5.8-3.3c.8-.5 1.8-.5 2.5 0l4.5 2.6c.8.5 1.2 1.3 1.2 2.2v5.3c0 .9-.5 1.7-1.2 2.2l-4.5 2.7c-.8.5-1.8.5-2.5 0l-4.5-2.7c-.8-.5-1.2-1.3-1.2-2.2v-3.4l-4 2.3v3.4c0 .9.5 1.7 1.2 2.2l7 4c.8.5 1.8.5 2.5 0l7-4c.8-.5 1.2-1.3 1.2-2.2v-7.1c0-.9-.5-1.7-1.2-2.2l-7-4z"
+						fill="white"
+					/>
+				</svg>
+			</div>
+		);
+	}
+
 	return (
 		<div
 			className={cn(
@@ -246,20 +275,22 @@ function IntentRow({ intent, onSelectIntent }: IntentRowProps) {
 	const [error, setError] = useState<string | null>(null);
 
 	const { details } = intent;
+	const isTransfer = isTransferIntent(details);
+	const isPolymarket = isPolymarketTrade(details);
 	const intentChainId = details.chainId as SupportedChainId;
 	const chain = SUPPORTED_CHAINS[intentChainId];
 	const isPending = intent.status === "pending";
 
-	// Check chain mismatch - only if we know the wallet chain
 	const isWrongChain = walletChainId !== null && walletChainId !== intentChainId;
 
-	// Get token info
-	const tokenInfo = SUPPORTED_TOKENS[intentChainId]?.[details.token];
-	const tokenAddress =
-		(details.tokenAddress as `0x${string}` | undefined) ??
-		(tokenInfo?.address as `0x${string}` | undefined);
+	const token = isTransfer ? details.token : "USDC";
+	const tokenInfo = SUPPORTED_TOKENS[intentChainId]?.[token];
+	const tokenAddress = isTransfer
+		? ((details.tokenAddress as `0x${string}` | undefined) ??
+			(tokenInfo?.address as `0x${string}` | undefined))
+		: undefined;
 	const tokenDecimals = tokenInfo?.decimals ?? 6;
-	const isX402 = !!details.x402?.accepted;
+	const isX402 = isTransfer && !!details.x402?.accepted;
 
 	// Shortened intent ID: first 8 chars + ... + last 4 chars
 	const shortId = `${intent.id.slice(0, 8)}...${intent.id.slice(-4)}`;
@@ -271,20 +302,57 @@ function IntentRow({ intent, onSelectIntent }: IntentRowProps) {
 	const handleSign = async () => {
 		setError(null);
 
+		// Polymarket path: build PolyProxy tx and send
+		if (isPolymarket) {
+			if (!account) {
+				setError("Connect your Ledger to sign");
+				return;
+			}
+			if (isWrongChain) {
+				setError(`Switch to ${chain?.name ?? "Polygon"} to sign`);
+				return;
+			}
+			setIsSigning(true);
+			try {
+				const tx = buildPolymarketTx(details);
+				const txHash = await sendTransaction(tx);
+				await updateStatus.mutateAsync({
+					id: intent.id,
+					status: "broadcasting",
+					txHash,
+				});
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : "Transaction failed";
+				const lower = msg.toLowerCase();
+				const rejected =
+					lower.includes("reject") || lower.includes("cancel") || lower.includes("denied") || lower.includes("user") || lower.includes("abort");
+				dismissDeviceAction();
+				if (!rejected) {
+					try {
+						await updateStatus.mutateAsync({ id: intent.id, status: "failed", note: msg });
+					} catch { /* ignore */ }
+				}
+				setError(msg);
+			} finally {
+				setIsSigning(false);
+			}
+			return;
+		}
+
 		// x402 path: sign an EIP-712 authorization (EIP-3009)
-		if (isX402) {
+		if (isX402 && isTransfer) {
+			const transferDetails = details as TransferIntent;
 			if (!account) {
 				setError("Connect your Ledger device to authorize this payment");
 				return;
 			}
 
-			// Validate account address
 			if (!isValidEvmAddress(account)) {
 				setError("Invalid wallet address");
 				return;
 			}
 
-			const x402 = details.x402;
+			const x402 = transferDetails.x402;
 
 			// Strong validation of x402 requirements
 			const validation = validateX402ForSigning(x402?.resource, x402?.accepted);
@@ -437,19 +505,20 @@ function IntentRow({ intent, onSelectIntent }: IntentRowProps) {
 	}
 
 	// Check chain mismatch for standard transfers
+		const transferDet = details as TransferIntent;
 		if (isWrongChain) {
 			setError(`Please switch to ${chain?.name ?? "the correct network"} to sign`);
 			return;
 		}
 
 		if (!tokenAddress) {
-			setError(`Unknown token address for ${details.token}`);
+			setError(`Unknown token address for ${token}`);
 			return;
 		}
 
 		const encodeResult = encodeERC20Transfer(
-			details.recipient as `0x${string}`,
-			details.amount,
+			transferDet.recipient as `0x${string}`,
+			transferDet.amount,
 			tokenDecimals,
 		);
 
@@ -564,25 +633,36 @@ function IntentRow({ intent, onSelectIntent }: IntentRowProps) {
 
 				{/* To */}
 				<td className="py-20 px-24">
-					<div className="flex flex-col gap-2">
-						<AddressWithTooltip address={details.recipient}>
-							<code className="font-mono body-2 text-base cursor-default">
-								{formatAddress(details.recipient)}
-							</code>
-						</AddressWithTooltip>
-						{details.recipientEns && (
-							<span className="body-3 text-muted">{details.recipientEns}</span>
-						)}
-					</div>
+					{isPolymarket ? (
+						<div className="flex flex-col gap-2">
+							<span className="body-2-semi-bold text-base">
+								{details.outcome} on {details.marketTitle.length > 40 ? `${details.marketTitle.slice(0, 40)}…` : details.marketTitle}
+							</span>
+							<span className="body-3 text-muted">Polymarket Trade</span>
+						</div>
+					) : isTransfer ? (
+						<div className="flex flex-col gap-2">
+							<AddressWithTooltip address={details.recipient}>
+								<code className="font-mono body-2 text-base cursor-default">
+									{formatAddress(details.recipient)}
+								</code>
+							</AddressWithTooltip>
+							{details.recipientEns && (
+								<span className="body-3 text-muted">{details.recipientEns}</span>
+							)}
+						</div>
+					) : (
+						<span className="body-2 text-muted">—</span>
+					)}
 				</td>
 
 				{/* Amount */}
 				<td className="py-20 px-24">
 					<div className="flex items-center gap-8">
 						<span className="body-1-semi-bold text-base">
-							{details.amount} {details.token}
+							{details.amount} {token}
 						</span>
-						{details.token === "USDC" && <UsdcLogo />}
+						{token === "USDC" && <UsdcLogo />}
 					</div>
 				</td>
 

@@ -57,12 +57,28 @@ const transferIntentSchema = z
 	})
 	.passthrough();
 
+/** Polymarket trade intent details */
+const polymarketTradeIntentSchema = z.object({
+	type: z.literal("polymarket_trade"),
+	conditionId: z.string().regex(/^0x[a-fA-F0-9]{64}$/, "conditionId must be a bytes32 hex string"),
+	outcome: z.enum(["Yes", "No"]),
+	amount: z.string().min(1),
+	chainId: z.literal(137),
+	memo: z.string().optional(),
+});
+
+/** Discriminated union of all intent detail schemas */
+const intentDetailsSchema = z.discriminatedUnion("type", [
+	transferIntentSchema,
+	polymarketTradeIntentSchema,
+]);
+
 const urgencySchema = z.enum(["low", "normal", "high", "critical"]).optional();
 
 export const createIntentRequestSchema = z.object({
 	agentId: z.string().min(1, "agentId is required"),
 	agentName: z.string().optional(),
-	details: transferIntentSchema,
+	details: intentDetailsSchema,
 	urgency: urgencySchema,
 	expiresInMinutes: z.number().int().positive().optional(),
 });

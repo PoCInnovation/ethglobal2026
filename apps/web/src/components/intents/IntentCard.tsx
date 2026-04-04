@@ -9,6 +9,7 @@ import {
 	SUPPORTED_CHAINS,
 	SUPPORTED_TOKENS,
 	type SupportedChainId,
+	isPolymarketTrade,
 } from "@agent-intents/shared";
 import { Button } from "@ledgerhq/lumen-ui-react";
 import { useState } from "react";
@@ -34,16 +35,19 @@ export function IntentCard({ intent }: IntentCardProps) {
 	const [error, setError] = useState<string | null>(null);
 
 	const { details } = intent;
+	const isPolymarket = isPolymarketTrade(details);
 	const intentChainId = details.chainId as SupportedChainId;
 	const chain = SUPPORTED_CHAINS[intentChainId];
 	const isWrongChain = walletChainId !== intentChainId;
 	const isPending = intent.status === "pending";
 
-	// Get token info
-	const tokenInfo = SUPPORTED_TOKENS[intentChainId]?.[details.token];
-	const tokenAddress =
-		(details.tokenAddress as `0x${string}` | undefined) ??
-		(tokenInfo?.address as `0x${string}` | undefined);
+	const token = isPolymarket ? "USDC" : details.token;
+	const recipient = isPolymarket ? "Polymarket" : details.recipient;
+	const tokenInfo = SUPPORTED_TOKENS[intentChainId]?.[token];
+	const tokenAddress = isPolymarket
+		? undefined
+		: ((details.tokenAddress as `0x${string}` | undefined) ??
+			(tokenInfo?.address as `0x${string}` | undefined));
 	const tokenDecimals = tokenInfo?.decimals ?? 6;
 
 	// ==========================================================================
@@ -59,15 +63,20 @@ export function IntentCard({ intent }: IntentCardProps) {
 			return;
 		}
 
+		if (isPolymarket) {
+			setError("Use the detailed view to sign Polymarket trades");
+			return;
+		}
+
 		// 2. Validate token address
 		if (!tokenAddress) {
-			setError(`Unknown token address for ${details.token}`);
+			setError(`Unknown token address for ${token}`);
 			return;
 		}
 
 		// 3. Encode ERC-20 transfer
 		const encodeResult = encodeERC20Transfer(
-			details.recipient as `0x${string}`,
+			(details as { recipient: string }).recipient as `0x${string}`,
 			details.amount,
 			tokenDecimals,
 		);
@@ -162,7 +171,7 @@ export function IntentCard({ intent }: IntentCardProps) {
 			<div className="mb-16 rounded-md bg-neutral-800/50 p-16">
 				<div className="mb-12 flex items-baseline justify-between">
 					<span className="text-2xl font-semibold text-white">
-						{details.amount} {details.token}
+						{details.amount} {token}
 					</span>
 					<span className="text-xs text-neutral-400">
 						on {chain?.name ?? `Chain ${intentChainId}`}
@@ -172,9 +181,11 @@ export function IntentCard({ intent }: IntentCardProps) {
 				<div className="flex items-center gap-8 text-sm">
 					<span className="text-neutral-400">To:</span>
 					<code className="rounded bg-neutral-700/50 px-8 py-2 font-mono text-xs text-neutral-300">
-						{formatAddress(details.recipient)}
+						{isPolymarket
+							? `Polymarket: ${details.outcome} on ${details.marketTitle}`
+							: formatAddress(details.recipient)}
 					</code>
-					{details.recipientEns && (
+					{!isPolymarket && details.recipientEns && (
 						<span className="text-neutral-300">({details.recipientEns})</span>
 					)}
 				</div>

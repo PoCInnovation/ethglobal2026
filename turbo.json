@@ -19,7 +19,11 @@
 		"NEON_PROJECT_ID",
 		"VITE_BACKEND_URL",
 		"VITE_BASE_MAINNET_RPC_URL",
-		"VITE_LEDGER_API_KEY"
+		"VITE_LEDGER_API_KEY",
+		"VITE_POLY_PROXY_ADDRESS",
+		"VITE_ORACLE_CRE_ADDRESS",
+		"POLY_PROXY_ADDRESS",
+		"ORACLE_CRE_ADDRESS"
 	],
 	"tasks": {
 		"build": {
@@ -28,7 +32,8 @@
 		},
 		"dev": {
 			"cache": false,
-			"persistent": true
+			"persistent": true,
+			"dependsOn": ["^build"]
 		},
 		"typecheck": {
 			"dependsOn": ["^build"]
