@@ -1,5 +1,5 @@
 /**
- * Agent Intents logo — robot/agent inside a coin circle.
+ * Polyledger logo — Polymarket diamond shape with a Ledger shield/lock motif.
  * Uses `currentColor` so it adapts to light/dark themes.
  */
 export function AgentIntentsLogo({
@@ -19,39 +19,30 @@ export function AgentIntentsLogo({
 			className={className}
 			aria-hidden="true"
 		>
-			{/* Outer coin circle — represents payment */}
-			<circle cx="16" cy="16" r="14" stroke="currentColor" strokeWidth="2" />
+			{/* Polymarket-style diamond shape */}
+			<path
+				d="M16 2L29 16L16 30L3 16L16 2Z"
+				stroke="currentColor"
+				strokeWidth="2"
+				strokeLinejoin="round"
+			/>
 
-			{/* Bot head — represents the agent */}
-			<rect x="9" y="12" width="14" height="10" rx="3" stroke="currentColor" strokeWidth="1.5" />
-
-			{/* Left eye */}
-			<circle cx="13" cy="17" r="1.5" fill="currentColor" />
-
-			{/* Right eye */}
-			<circle cx="19" cy="17" r="1.5" fill="currentColor" />
-
-			{/* Antenna stem */}
-			<line
-				x1="16"
-				y1="12"
-				x2="16"
-				y2="7"
+			{/* Ledger shield / secure vault */}
+			<path
+				d="M16 9C13 9 11 10.5 11 10.5V17C11 20.5 16 23 16 23C16 23 21 20.5 21 17V10.5C21 10.5 19 9 16 9Z"
 				stroke="currentColor"
 				strokeWidth="1.5"
 				strokeLinecap="round"
+				strokeLinejoin="round"
 			/>
 
-			{/* Antenna tip — signal dot */}
-			<circle cx="16" cy="6" r="1.5" fill="currentColor" />
-
-			{/* Small signal arcs around antenna */}
+			{/* Checkmark inside shield — trust / verified */}
 			<path
-				d="M12.5 5.5 C13.5 3.5 18.5 3.5 19.5 5.5"
+				d="M13.5 16L15.5 18L19 14"
 				stroke="currentColor"
-				strokeWidth="1"
+				strokeWidth="1.5"
 				strokeLinecap="round"
-				fill="none"
+				strokeLinejoin="round"
 			/>
 		</svg>
 	);

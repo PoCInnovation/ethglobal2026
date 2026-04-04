@@ -1,5 +1,4 @@
 import { IntentList } from "@/components/intents";
-import { TestPolymarketOrder } from "@/components/TestPolymarketOrder";
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/")({
@@ -11,12 +10,9 @@ function HomePage() {
 		<div className="flex flex-col gap-32">
 			{/* Page header */}
 			<div className="flex flex-col gap-8">
-				<h1 className="heading-1-semi-bold text-base">Agent Payments with Ledger</h1>
+				<h1 className="heading-1-semi-bold text-base">Polyledger</h1>
 				<p className="body-1 text-muted">Agents propose, humans sign with hardware</p>
 			</div>
-
-			{/* Test Polymarket signing (dev only) */}
-			<TestPolymarketOrder />
 
 			{/* Intent List (handles all states internally) */}
 			<IntentList />

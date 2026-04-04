@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PolyLedger Agent — Logo Concepts</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #ffffff;
+      color: #111;
+      padding: 40px;
+    }
+    h1 { font-size: 28px; font-weight: 600; margin-bottom: 8px; }
+    .subtitle { font-size: 14px; color: #888; margin-bottom: 48px; }
+    .concepts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; margin-bottom: 60px; }
+    .concept {
+      border: 1px solid #e5e5e5;
+      border-radius: 16px;
+      padding: 32px;
+      text-align: center;
+      transition: box-shadow 0.2s;
+    }
+    .concept:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .concept h2 { font-size: 16px; font-weight: 600; margin-top: 24px; margin-bottom: 8px; }
+    .concept p { font-size: 13px; color: #666; line-height: 1.5; }
+    .logo-container {
+      width: 120px; height: 120px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .variants { margin-top: 20px; display: flex; gap: 16px; justify-content: center; align-items: center; }
+    .variant {
+      width: 40px; height: 40px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .variant.dark { background: #111; border-radius: 8px; }
+
+    /* Header preview section */
+    .preview-section { margin-top: 60px; }
+    .preview-section h2 { font-size: 20px; font-weight: 600; margin-bottom: 24px; }
+    .header-preview {
+      border: 1px solid #e5e5e5;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .mock-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 24px;
+      border-bottom: 1px solid #f0f0f0;
+      background: #fff;
+    }
+    .mock-header .logo-sm { width: 32px; height: 32px; }
+    .mock-header .brand-name { font-size: 16px; font-weight: 600; }
+    .mock-header .nav { margin-left: auto; display: flex; gap: 24px; }
+    .mock-header .nav span { font-size: 13px; color: #888; cursor: pointer; }
+    .mock-header .nav span.active { color: #111; font-weight: 500; }
+    .mock-body { padding: 40px 24px; background: #fafafa; min-height: 120px; display: flex; align-items: center; justify-content: center; color: #ccc; font-size: 14px; }
+  </style>
+</head>
+<body>
+
+  <h1>PolyLedger Agent</h1>
+  <p class="subtitle">Logo concepts — Clean & Professional, Black on White</p>
+
+  <div class="concepts">
+
+    <!-- Concept A: Connected Nodes in Shield -->
+    <div class="concept">
+      <div class="logo-container">
+        <svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Shield outline -->
+          <path d="M50 8L14 24V50C14 72 30 88 50 95C70 88 86 72 86 50V24L50 8Z" stroke="#111" stroke-width="2.5" fill="none"/>
+          <!-- AI network nodes inside -->
+          <circle cx="50" cy="38" r="4" fill="#111"/>
+          <circle cx="35" cy="58" r="4" fill="#111"/>
+          <circle cx="65" cy="58" r="4" fill="#111"/>
+          <circle cx="50" cy="72" r="3" fill="#111"/>
+          <!-- Connection lines -->
+          <line x1="50" y1="38" x2="35" y2="58" stroke="#111" stroke-width="1.5"/>
+          <line x1="50" y1="38" x2="65" y2="58" stroke="#111" stroke-width="1.5"/>
+          <line x1="35" y1="58" x2="65" y2="58" stroke="#111" stroke-width="1.5"/>
+          <line x1="35" y1="58" x2="50" y2="72" stroke="#111" stroke-width="1.5"/>
+          <line x1="65" y1="58" x2="50" y2="72" stroke="#111" stroke-width="1.5"/>
+          <!-- Checkmark accent on top node -->
+          <polyline points="45,37 48,41 56,33" stroke="#111" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <h2>A — Shield Network</h2>
+      <p>Shield (Ledger security) + connected nodes (AI agent) + checkmark accent (Polymarket predictions)</p>
+      <div class="variants">
+        <div class="variant">
+          <svg width="32" height="32" viewBox="0 0 100 100" fill="none"><path d="M50 8L14 24V50C14 72 30 88 50 95C70 88 86 72 86 50V24L50 8Z" stroke="#111" stroke-width="3" fill="none"/><circle cx="50" cy="38" r="4" fill="#111"/><circle cx="35" cy="58" r="4" fill="#111"/><circle cx="65" cy="58" r="4" fill="#111"/><circle cx="50" cy="72" r="3" fill="#111"/><line x1="50" y1="38" x2="35" y2="58" stroke="#111" stroke-width="1.8"/><line x1="50" y1="38" x2="65" y2="58" stroke="#111" stroke-width="1.8"/><line x1="35" y1="58" x2="65" y2="58" stroke="#111" stroke-width="1.8"/><line x1="35" y1="58" x2="50" y2="72" stroke="#111" stroke-width="1.5"/><line x1="65" y1="58" x2="50" y2="72" stroke="#111" stroke-width="1.5"/></svg>
+        </div>
+        <div class="variant dark">
+          <svg width="32" height="32" viewBox="0 0 100 100" fill="none"><path d="M50 8L14 24V50C14 72 30 88 50 95C70 88 86 72 86 50V24L50 8Z" stroke="#fff" stroke-width="3" fill="none"/><circle cx="50" cy="38" r="4" fill="#fff"/><circle cx="35" cy="58" r="4" fill="#fff"/><circle cx="65" cy="58" r="4" fill="#fff"/><circle cx="50" cy="72" r="3" fill="#fff"/><line x1="50" y1="38" x2="35" y2="58" stroke="#fff" stroke-width="1.8"/><line x1="50" y1="38" x2="65" y2="58" stroke="#fff" stroke-width="1.8"/><line x1="35" y1="58" x2="65" y2="58" stroke="#fff" stroke-width="1.8"/><line x1="35" y1="58" x2="50" y2="72" stroke="#fff" stroke-width="1.5"/><line x1="65" y1="58" x2="50" y2="72" stroke="#fff" stroke-width="1.5"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Concept B: Geometric Brain + Ledger Line -->
+    <div class="concept">
+      <div class="logo-container">
+        <svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Left half: brain/circuit -->
+          <path d="M50 15 L30 25 L25 45 L30 65 L50 75" stroke="#111" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <!-- Right half: mirror -->
+          <path d="M50 15 L70 25 L75 45 L70 65 L50 75" stroke="#111" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <!-- Internal circuit lines left -->
+          <line x1="30" y1="25" x2="50" y2="35" stroke="#111" stroke-width="1.5"/>
+          <line x1="25" y1="45" x2="50" y2="45" stroke="#111" stroke-width="1.5"/>
+          <line x1="30" y1="65" x2="50" y2="55" stroke="#111" stroke-width="1.5"/>
+          <!-- Internal circuit lines right -->
+          <line x1="70" y1="25" x2="50" y2="35" stroke="#111" stroke-width="1.5"/>
+          <line x1="75" y1="45" x2="50" y2="45" stroke="#111" stroke-width="1.5"/>
+          <line x1="70" y1="65" x2="50" y2="55" stroke="#111" stroke-width="1.5"/>
+          <!-- Center nodes -->
+          <circle cx="50" cy="35" r="3.5" fill="#111"/>
+          <circle cx="50" cy="45" r="3.5" fill="#111"/>
+          <circle cx="50" cy="55" r="3.5" fill="#111"/>
+          <!-- Outer nodes -->
+          <circle cx="30" cy="25" r="3" fill="#111"/>
+          <circle cx="25" cy="45" r="3" fill="#111"/>
+          <circle cx="30" cy="65" r="3" fill="#111"/>
+          <circle cx="70" cy="25" r="3" fill="#111"/>
+          <circle cx="75" cy="45" r="3" fill="#111"/>
+          <circle cx="70" cy="65" r="3" fill="#111"/>
+          <!-- Small trend line at bottom -->
+          <polyline points="35,82 42,80 48,84 55,78 62,81 68,76" stroke="#111" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <h2>B — Circuit Brain</h2>
+      <p>Geometric brain shape (AI) + circuit nodes (Ledger hardware) + trend line (Polymarket)</p>
+      <div class="variants">
+        <div class="variant">
+          <svg width="32" height="32" viewBox="0 0 100 100" fill="none"><path d="M50 15 L30 25 L25 45 L30 65 L50 75" stroke="#111" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M50 15 L70 25 L75 45 L70 65 L50 75" stroke="#111" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="50" cy="35" r="3.5" fill="#111"/><circle cx="50" cy="45" r="3.5" fill="#111"/><circle cx="50" cy="55" r="3.5" fill="#111"/><line x1="30" y1="25" x2="50" y2="35" stroke="#111" stroke-width="1.8"/><line x1="70" y1="25" x2="50" y2="35" stroke="#111" stroke-width="1.8"/><line x1="25" y1="45" x2="50" y2="45" stroke="#111" stroke-width="1.8"/><line x1="75" y1="45" x2="50" y2="45" stroke="#111" stroke-width="1.8"/></svg>
+        </div>
+        <div class="variant dark">
+          <svg width="32" height="32" viewBox="0 0 100 100" fill="none"><path d="M50 15 L30 25 L25 45 L30 65 L50 75" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M50 15 L70 25 L75 45 L70 65 L50 75" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="50" cy="35" r="3.5" fill="#fff"/><circle cx="50" cy="45" r="3.5" fill="#fff"/><circle cx="50" cy="55" r="3.5" fill="#fff"/><line x1="30" y1="25" x2="50" y2="35" stroke="#fff" stroke-width="1.8"/><line x1="70" y1="25" x2="50" y2="35" stroke="#fff" stroke-width="1.8"/><line x1="25" y1="45" x2="50" y2="45" stroke="#fff" stroke-width="1.8"/><line x1="75" y1="45" x2="50" y2="45" stroke="#fff" stroke-width="1.8"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Concept C: Cube Network -->
+    <div class="concept">
+      <div class="logo-container">
+        <svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Isometric cube -->
+          <!-- Top face -->
+          <polygon points="50,20 78,35 50,50 22,35" stroke="#111" stroke-width="2.5" fill="none"/>
+          <!-- Left face -->
+          <polygon points="22,35 50,50 50,78 22,63" stroke="#111" stroke-width="2.5" fill="none"/>
+          <!-- Right face -->
+          <polygon points="78,35 50,50 50,78 78,63" stroke="#111" stroke-width="2.5" fill="none"/>
+          <!-- Network extending from vertices -->
+          <line x1="50" y1="20" x2="50" y2="10" stroke="#111" stroke-width="1.5"/>
+          <circle cx="50" cy="8" r="3" fill="#111"/>
+          <line x1="78" y1="35" x2="90" y2="30" stroke="#111" stroke-width="1.5"/>
+          <circle cx="92" cy="29" r="3" fill="#111"/>
+          <line x1="22" y1="35" x2="10" y2="30" stroke="#111" stroke-width="1.5"/>
+          <circle cx="8" cy="29" r="3" fill="#111"/>
+          <line x1="78" y1="63" x2="90" y2="68" stroke="#111" stroke-width="1.5"/>
+          <circle cx="92" cy="69" r="3" fill="#111"/>
+          <line x1="22" y1="63" x2="10" y2="68" stroke="#111" stroke-width="1.5"/>
+          <circle cx="8" cy="69" r="3" fill="#111"/>
+          <line x1="50" y1="78" x2="50" y2="88" stroke="#111" stroke-width="1.5"/>
+          <circle cx="50" cy="90" r="3" fill="#111"/>
+          <!-- Small connection between outer nodes -->
+          <line x1="50" y1="8" x2="92" y2="29" stroke="#111" stroke-width="0.8" stroke-dasharray="3,3"/>
+          <line x1="50" y1="8" x2="8" y2="29" stroke="#111" stroke-width="0.8" stroke-dasharray="3,3"/>
+        </svg>
+      </div>
+      <h2>C — Cube Network</h2>
+      <p>Isometric cube (Ledger hardware solidity) + extending nodes (AI network) + connected structure (Polymarket data)</p>
+      <div class="variants">
+        <div class="variant">
+          <svg width="32" height="32" viewBox="0 0 100 100" fill="none"><polygon points="50,20 78,35 50,50 22,35" stroke="#111" stroke-width="3" fill="none"/><polygon points="22,35 50,50 50,78 22,63" stroke="#111" stroke-width="3" fill="none"/><polygon points="78,35 50,50 50,78 78,63" stroke="#111" stroke-width="3" fill="none"/><line x1="50" y1="20" x2="50" y2="10" stroke="#111" stroke-width="2"/><circle cx="50" cy="8" r="3" fill="#111"/><line x1="78" y1="35" x2="90" y2="30" stroke="#111" stroke-width="2"/><circle cx="92" cy="29" r="3" fill="#111"/><line x1="22" y1="35" x2="10" y2="30" stroke="#111" stroke-width="2"/><circle cx="8" cy="29" r="3" fill="#111"/></svg>
+        </div>
+        <div class="variant dark">
+          <svg width="32" height="32" viewBox="0 0 100 100" fill="none"><polygon points="50,20 78,35 50,50 22,35" stroke="#fff" stroke-width="3" fill="none"/><polygon points="22,35 50,50 50,78 22,63" stroke="#fff" stroke-width="3" fill="none"/><polygon points="78,35 50,50 50,78 78,63" stroke="#fff" stroke-width="3" fill="none"/><line x1="50" y1="20" x2="50" y2="10" stroke="#fff" stroke-width="2"/><circle cx="50" cy="8" r="3" fill="#fff"/><line x1="78" y1="35" x2="90" y2="30" stroke="#fff" stroke-width="2"/><circle cx="92" cy="29" r="3" fill="#fff"/><line x1="22" y1="35" x2="10" y2="30" stroke="#fff" stroke-width="2"/><circle cx="8" cy="29" r="3" fill="#fff"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header previews -->
+  <div class="preview-section">
+    <h2>In-context: Header preview</h2>
+    <div style="display: flex; flex-direction: column; gap: 24px;">
+
+      <!-- Header A -->
+      <div class="header-preview">
+        <div class="mock-header">
+          <div class="logo-sm">
+            <svg width="32" height="32" viewBox="0 0 100 100" fill="none"><path d="M50 8L14 24V50C14 72 30 88 50 95C70 88 86 72 86 50V24L50 8Z" stroke="#111" stroke-width="3" fill="none"/><circle cx="50" cy="38" r="4" fill="#111"/><circle cx="35" cy="58" r="4" fill="#111"/><circle cx="65" cy="58" r="4" fill="#111"/><line x1="50" y1="38" x2="35" y2="58" stroke="#111" stroke-width="2"/><line x1="50" y1="38" x2="65" y2="58" stroke="#111" stroke-width="2"/><line x1="35" y1="58" x2="65" y2="58" stroke="#111" stroke-width="2"/></svg>
+          </div>
+          <span class="brand-name">PolyLedger Agent</span>
+          <div class="nav">
+            <span class="active">Review Intents</span>
+            <span>Portfolio</span>
+            <span>History</span>
+            <span>Settings</span>
+          </div>
+        </div>
+        <div class="mock-body">A — Shield Network</div>
+      </div>
+
+      <!-- Header B -->
+      <div class="header-preview">
+        <div class="mock-header">
+          <div class="logo-sm">
+            <svg width="32" height="32" viewBox="0 0 100 100" fill="none"><path d="M50 15 L30 25 L25 45 L30 65 L50 75" stroke="#111" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M50 15 L70 25 L75 45 L70 65 L50 75" stroke="#111" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="50" cy="35" r="4" fill="#111"/><circle cx="50" cy="45" r="4" fill="#111"/><circle cx="50" cy="55" r="4" fill="#111"/><line x1="30" y1="25" x2="50" y2="35" stroke="#111" stroke-width="2"/><line x1="70" y1="25" x2="50" y2="35" stroke="#111" stroke-width="2"/><line x1="25" y1="45" x2="50" y2="45" stroke="#111" stroke-width="2"/><line x1="75" y1="45" x2="50" y2="45" stroke="#111" stroke-width="2"/></svg>
+          </div>
+          <span class="brand-name">PolyLedger Agent</span>
+          <div class="nav">
+            <span class="active">Review Intents</span>
+            <span>Portfolio</span>
+            <span>History</span>
+            <span>Settings</span>
+          </div>
+        </div>
+        <div class="mock-body">B — Circuit Brain</div>
+      </div>
+
+      <!-- Header C -->
+      <div class="header-preview">
+        <div class="mock-header">
+          <div class="logo-sm">
+            <svg width="32" height="32" viewBox="0 0 100 100" fill="none"><polygon points="50,20 78,35 50,50 22,35" stroke="#111" stroke-width="3" fill="none"/><polygon points="22,35 50,50 50,78 22,63" stroke="#111" stroke-width="3" fill="none"/><polygon points="78,35 50,50 50,78 78,63" stroke="#111" stroke-width="3" fill="none"/><line x1="50" y1="20" x2="50" y2="10" stroke="#111" stroke-width="2"/><circle cx="50" cy="8" r="3" fill="#111"/><line x1="78" y1="35" x2="90" y2="30" stroke="#111" stroke-width="2"/><circle cx="92" cy="29" r="3" fill="#111"/><line x1="22" y1="35" x2="10" y2="30" stroke="#111" stroke-width="2"/><circle cx="8" cy="29" r="3" fill="#111"/></svg>
+          </div>
+          <span class="brand-name">PolyLedger Agent</span>
+          <div class="nav">
+            <span class="active">Review Intents</span>
+            <span>Portfolio</span>
+            <span>History</span>
+            <span>Settings</span>
+          </div>
+        </div>
+        <div class="mock-body">C — Cube Network</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

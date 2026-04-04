@@ -35,7 +35,7 @@ export function Header() {
 			{/* Left: Logo + brand */}
 			<Link to="/" className="flex items-center gap-10 hover:opacity-80 transition-opacity">
 				<AgentIntentsLogo size={28} className="text-base" />
-				<span className="body-1-semi-bold text-base">Agent Intents</span>
+				<span className="body-1-semi-bold text-base">Polyledger</span>
 			</Link>
 
 			{/* Right: Actions */}

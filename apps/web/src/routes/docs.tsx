@@ -7,7 +7,7 @@ export const Route = createFileRoute("/docs")({
 	component: DocsPage,
 	head: () => ({
 		meta: [
-			{ title: "API Documentation | Agent Payments with Ledger" },
+			{ title: "API Documentation | Polyledger" },
 			{
 				name: "description",
 				content:
@@ -193,7 +193,7 @@ function DocsPage() {
 						</Link>
 					</div>
 					<div>
-						<h1 className="heading-2-semi-bold text-base">Agent Payments with Ledger API</h1>
+						<h1 className="heading-2-semi-bold text-base">Polyledger API</h1>
 						<p className="body-1 text-muted mt-8">
 							Documentation for AI agents to submit transaction intents for Ledger hardware signing.
 						</p>
@@ -213,7 +213,7 @@ function DocsPage() {
 				{/* Overview */}
 				<Section id="overview" title="Overview">
 					<p className="body-1 text-base">
-						The Agent Payments with Ledger API allows AI agents to submit transaction intents that
+						The Polyledger API allows AI agents to submit transaction intents that
 						will be queued for human review and hardware signing. This creates a secure bridge where
 						agents can propose transactions but never access private keys.
 					</p>
@@ -1255,26 +1255,26 @@ done`}
   userId: string;                // Wallet address of the human signer
   agentId: string;               // Agent that created the intent
   agentName: string;             // Agent display name
-  
+
   details: IntentDetails;        // TransferIntent | PolymarketTradeDetails
   urgency: IntentUrgency;        // "low" | "normal" | "high" | "critical"
   status: IntentStatus;          // Current status in lifecycle
-  
+
   // Trustchain (set when created by authenticated agent)
   trustChainId?: string;         // Owner's wallet address
   createdByMemberId?: string;    // Agent member UUID
-  
+
   // Timestamps (ISO 8601)
   createdAt: string;
   expiresAt?: string;
   reviewedAt?: string;
   broadcastAt?: string;
   confirmedAt?: string;
-  
+
   // Transaction result
   txHash?: string;               // Transaction hash after confirmation
   txUrl?: string;                // Block explorer link
-  
+
   // Audit trail
   statusHistory: Array<{
     status: IntentStatus;
@@ -1297,7 +1297,7 @@ done`}
   recipientEns?: string;         // ENS name if resolved
   chainId: number;               // Chain ID (8453, 11155111, 84532, 137)
   memo?: string;                 // Human-readable reason
-  
+
   // x402-aligned fields
   resource?: string;             // x402 resource URL being paid for
   category?: PaymentCategory;    // Payment category
@@ -1528,7 +1528,7 @@ type IntentDetails = TransferIntent | PolymarketTradeDetails;`}
 					<div className="flex items-center justify-between">
 						<div>
 							<p className="body-2 text-muted-subtle">
-								Agent Payments with Ledger API Documentation
+								Polyledger API Documentation
 							</p>
 							<p className="body-3 text-muted-subtle mt-4">
 								Machine-readable spec:{" "}
