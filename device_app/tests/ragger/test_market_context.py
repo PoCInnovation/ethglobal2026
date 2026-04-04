@@ -218,3 +218,21 @@ def test_mcp_token_id_mismatch_aborts_sign(backend, scenario_navigator: Navigate
         InputData.process_data(app_client, data)
         with app_client.eip712_sign_new(BIP32_PATH):
             scenario_navigator.review_approve_with_warning(do_comparison=False)
+
+
+def test_mcp_large_payload_chunking(backend):
+    """MCP payload with long market name forces multi-chunk APDU and succeeds."""
+    from client.market_context import MarketContext
+
+    app_client = EthAppClient(backend)
+    # 120-char market name will push total payload well over 255 bytes (single APDU limit)
+    long_name = "Will the United States Federal Reserve raise interest rates above 6 percent before the end of the fiscal year 2026-2027?"
+    mcp = MarketContext(
+        token_id=SAMPLE_TOKEN_ID,
+        chain_id=137,
+        market_name=long_name,
+        market_outcome="YES",
+        market_amount="1000.00 USDC",
+    )
+    response = app_client.provide_market_context(mcp)
+    assert response.status == 0x9000
