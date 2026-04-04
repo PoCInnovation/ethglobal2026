@@ -671,20 +671,41 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 			}
 			setIsSigning(true);
 			try {
-				// Step 1: Simulate — fetch latest price + negRisk
+				// Step 1: CRE — trigger on-chain write + read verified market data
+				console.log("[Polymarket] Verifying market via CRE oracle for conditionId:", polyDetails.conditionId);
+				const verifyRes = await fetch("/api/polymarket/verify", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					credentials: "include",
+					body: JSON.stringify({ conditionId: polyDetails.conditionId }),
+				});
+				if (!verifyRes.ok) {
+					const err = await verifyRes.json().catch(() => ({}));
+					throw new Error(err?.error || `Market verification failed (${verifyRes.status})`);
+				}
+				const verifiedMarket = await verifyRes.json();
+				console.log("[Polymarket] Verified market:", verifiedMarket);
+
+				// Check market still active according to oracle
+				if (!verifiedMarket.active) {
+					throw new Error(`Market is no longer active: "${verifiedMarket.question}"`);
+				}
+
+				// Step 2: Simulate — fetch latest price + negRisk
 				console.log("[Polymarket] Simulating order for tokenId:", polyDetails.tokenId);
 				const simulation = await simulateOrder(polyDetails.tokenId);
 				console.log("[Polymarket] Simulation:", simulation);
 
-				// Step 2: Build order with fresh price
-				const order = buildOrderFromIntent(polyDetails, account, simulation);
-				console.log("[Polymarket] Order built:", order.message);
+				// Step 3: Build order with oracle-verified market title injected
+				const enrichedDetails = { ...polyDetails, marketTitle: verifiedMarket.question };
+				const order = buildOrderFromIntent(enrichedDetails, account, simulation);
+				console.log("[Polymarket] Order built (oracle source:", verifiedMarket.source, "):", order.message);
 
-				// Step 3: Sign on Ledger
+				// Step 4: Sign on Ledger
 				const signature = await signTypedDataV4(order);
 				console.log("[Polymarket] Signed:", signature);
 
-				// Step 4: Submit to CLOB
+				// Step 5: Submit to CLOB
 				const result = await submitSignedOrder(order.message, signature, account);
 				if (!result.success) {
 					throw new Error(result.errorMsg || "CLOB submission failed");

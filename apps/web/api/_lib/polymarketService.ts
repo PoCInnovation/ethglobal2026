@@ -155,9 +155,11 @@ export async function enrichPolymarketIntent(
 		throw new Error(validationError);
 	}
 
-	// Resolve token IDs for both outcomes
-	const yesToken = market.tokens?.find((t) => t.outcome === "Yes");
-	const noToken = market.tokens?.find((t) => t.outcome === "No");
+	// Resolve token IDs — try Yes/No first, fall back to tokens[0]/tokens[1]
+	// for binary markets with named outcomes (e.g. "Thunder" / "Lakers")
+	const tokens = market.tokens ?? [];
+	const yesToken = tokens.find((t) => t.outcome === "Yes") ?? tokens[0];
+	const noToken  = tokens.find((t) => t.outcome === "No")  ?? tokens[1];
 	const outcomeTokenIds =
 		yesToken && noToken ? { yes: yesToken.token_id, no: noToken.token_id } : undefined;
 	const tokenId = details.outcome === "Yes" ? yesToken?.token_id : noToken?.token_id;
