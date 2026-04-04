@@ -197,18 +197,62 @@ var init_base = __esm(() => {
     }
   };
 });
+var AbiDecodingDataSizeTooSmallError;
+var AbiDecodingZeroDataError;
 var AbiEncodingArrayLengthMismatchError;
 var AbiEncodingBytesSizeMismatchError;
 var AbiEncodingLengthMismatchError;
 var AbiFunctionNotFoundError;
+var AbiFunctionOutputsNotFoundError;
 var AbiItemAmbiguityError;
 var InvalidAbiEncodingTypeError;
+var InvalidAbiDecodingTypeError;
 var InvalidArrayError;
 var InvalidDefinitionTypeError;
 var init_abi = __esm(() => {
   init_formatAbiItem2();
   init_size();
   init_base();
+  AbiDecodingDataSizeTooSmallError = class AbiDecodingDataSizeTooSmallError2 extends BaseError {
+    constructor({ data, params, size: size2 }) {
+      super([`Data size of ${size2} bytes is too small for given parameters.`].join(`
+`), {
+        metaMessages: [
+          `Params: (${formatAbiParams(params, { includeName: true })})`,
+          `Data:   ${data} (${size2} bytes)`
+        ],
+        name: "AbiDecodingDataSizeTooSmallError"
+      });
+      Object.defineProperty(this, "data", {
+        enumerable: true,
+        configurable: true,
+        writable: true,
+        value: undefined
+      });
+      Object.defineProperty(this, "params", {
+        enumerable: true,
+        configurable: true,
+        writable: true,
+        value: undefined
+      });
+      Object.defineProperty(this, "size", {
+        enumerable: true,
+        configurable: true,
+        writable: true,
+        value: undefined
+      });
+      this.data = data;
+      this.params = params;
+      this.size = size2;
+    }
+  };
+  AbiDecodingZeroDataError = class AbiDecodingZeroDataError2 extends BaseError {
+    constructor() {
+      super('Cannot decode zero data ("0x") with ABI parameters.', {
+        name: "AbiDecodingZeroDataError"
+      });
+    }
+  };
   AbiEncodingArrayLengthMismatchError = class AbiEncodingArrayLengthMismatchError2 extends BaseError {
     constructor({ expectedLength, givenLength, type }) {
       super([
@@ -246,6 +290,19 @@ var init_abi = __esm(() => {
       });
     }
   };
+  AbiFunctionOutputsNotFoundError = class AbiFunctionOutputsNotFoundError2 extends BaseError {
+    constructor(functionName, { docsPath }) {
+      super([
+        `Function "${functionName}" does not contain any \`outputs\` on ABI.`,
+        "Cannot decode function result without knowing what the parameter types are.",
+        "Make sure you are using the correct ABI and that the function exists on it."
+      ].join(`
+`), {
+        docsPath,
+        name: "AbiFunctionOutputsNotFoundError"
+      });
+    }
+  };
   AbiItemAmbiguityError = class AbiItemAmbiguityError2 extends BaseError {
     constructor(x, y) {
       super("Found ambiguous types in overloaded ABI items.", {
@@ -267,6 +324,15 @@ var init_abi = __esm(() => {
         "Please provide a valid ABI type."
       ].join(`
 `), { docsPath, name: "InvalidAbiEncodingType" });
+    }
+  };
+  InvalidAbiDecodingTypeError = class InvalidAbiDecodingTypeError2 extends BaseError {
+    constructor(type, { docsPath }) {
+      super([
+        `Type "${type}" is not a valid decoding type.`,
+        "Please provide a valid ABI type."
+      ].join(`
+`), { docsPath, name: "InvalidAbiDecodingType" });
     }
   };
   InvalidArrayError = class InvalidArrayError2 extends BaseError {
@@ -339,6 +405,7 @@ var init_pad = __esm(() => {
   init_data();
 });
 var IntegerOutOfRangeError;
+var InvalidBytesBooleanError;
 var SizeOverflowError;
 var init_encoding = __esm(() => {
   init_base();
@@ -347,18 +414,58 @@ var init_encoding = __esm(() => {
       super(`Number "${value2}" is not in safe ${size2 ? `${size2 * 8}-bit ${signed ? "signed" : "unsigned"} ` : ""}integer range ${max ? `(${min} to ${max})` : `(above ${min})`}`, { name: "IntegerOutOfRangeError" });
     }
   };
+  InvalidBytesBooleanError = class InvalidBytesBooleanError2 extends BaseError {
+    constructor(bytes) {
+      super(`Bytes value "${bytes}" is not a valid boolean. The bytes array must contain a single byte of either a 0 or 1 value.`, {
+        name: "InvalidBytesBooleanError"
+      });
+    }
+  };
   SizeOverflowError = class SizeOverflowError2 extends BaseError {
     constructor({ givenSize, maxSize }) {
       super(`Size cannot exceed ${maxSize} bytes. Given size: ${givenSize} bytes.`, { name: "SizeOverflowError" });
     }
   };
 });
+function trim(hexOrBytes, { dir = "left" } = {}) {
+  let data = typeof hexOrBytes === "string" ? hexOrBytes.replace("0x", "") : hexOrBytes;
+  let sliceLength = 0;
+  for (let i2 = 0;i2 < data.length - 1; i2++) {
+    if (data[dir === "left" ? i2 : data.length - i2 - 1].toString() === "0")
+      sliceLength++;
+    else
+      break;
+  }
+  data = dir === "left" ? data.slice(sliceLength) : data.slice(0, data.length - sliceLength);
+  if (typeof hexOrBytes === "string") {
+    if (data.length === 1 && dir === "right")
+      data = `${data}0`;
+    return `0x${data.length % 2 === 1 ? `0${data}` : data}`;
+  }
+  return data;
+}
 function assertSize2(hexOrBytes, { size: size2 }) {
   if (size(hexOrBytes) > size2)
     throw new SizeOverflowError({
       givenSize: size(hexOrBytes),
       maxSize: size2
     });
+}
+function hexToBigInt(hex, opts = {}) {
+  const { signed } = opts;
+  if (opts.size)
+    assertSize2(hex, { size: opts.size });
+  const value2 = BigInt(hex);
+  if (!signed)
+    return value2;
+  const size2 = (hex.length - 2) / 2;
+  const max = (1n << BigInt(size2) * 8n - 1n) - 1n;
+  if (value2 <= max)
+    return value2;
+  return value2 - BigInt(`0x${"f".padStart(size2 * 2, "f")}`) - 1n;
+}
+function hexToNumber(hex, opts = {}) {
+  return Number(hexToBigInt(hex, opts));
 }
 var init_fromHex = __esm(() => {
   init_encoding();
@@ -1443,6 +1550,457 @@ function encodeFunctionData(parameters) {
 var init_encodeFunctionData = __esm(() => {
   init_encodeAbiParameters();
   init_prepareEncodeFunctionData();
+});
+var NegativeOffsetError;
+var PositionOutOfBoundsError;
+var RecursiveReadLimitExceededError;
+var init_cursor = __esm(() => {
+  init_base();
+  NegativeOffsetError = class NegativeOffsetError2 extends BaseError {
+    constructor({ offset }) {
+      super(`Offset \`${offset}\` cannot be negative.`, {
+        name: "NegativeOffsetError"
+      });
+    }
+  };
+  PositionOutOfBoundsError = class PositionOutOfBoundsError2 extends BaseError {
+    constructor({ length, position }) {
+      super(`Position \`${position}\` is out of bounds (\`0 < position < ${length}\`).`, { name: "PositionOutOfBoundsError" });
+    }
+  };
+  RecursiveReadLimitExceededError = class RecursiveReadLimitExceededError2 extends BaseError {
+    constructor({ count, limit }) {
+      super(`Recursive read limit of \`${limit}\` exceeded (recursive read count: \`${count}\`).`, { name: "RecursiveReadLimitExceededError" });
+    }
+  };
+});
+function createCursor(bytes, { recursiveReadLimit = 8192 } = {}) {
+  const cursor = Object.create(staticCursor);
+  cursor.bytes = bytes;
+  cursor.dataView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  cursor.positionReadCount = new Map;
+  cursor.recursiveReadLimit = recursiveReadLimit;
+  return cursor;
+}
+var staticCursor;
+var init_cursor2 = __esm(() => {
+  init_cursor();
+  staticCursor = {
+    bytes: new Uint8Array,
+    dataView: new DataView(new ArrayBuffer(0)),
+    position: 0,
+    positionReadCount: new Map,
+    recursiveReadCount: 0,
+    recursiveReadLimit: Number.POSITIVE_INFINITY,
+    assertReadLimit() {
+      if (this.recursiveReadCount >= this.recursiveReadLimit)
+        throw new RecursiveReadLimitExceededError({
+          count: this.recursiveReadCount + 1,
+          limit: this.recursiveReadLimit
+        });
+    },
+    assertPosition(position) {
+      if (position < 0 || position > this.bytes.length - 1)
+        throw new PositionOutOfBoundsError({
+          length: this.bytes.length,
+          position
+        });
+    },
+    decrementPosition(offset) {
+      if (offset < 0)
+        throw new NegativeOffsetError({ offset });
+      const position = this.position - offset;
+      this.assertPosition(position);
+      this.position = position;
+    },
+    getReadCount(position) {
+      return this.positionReadCount.get(position || this.position) || 0;
+    },
+    incrementPosition(offset) {
+      if (offset < 0)
+        throw new NegativeOffsetError({ offset });
+      const position = this.position + offset;
+      this.assertPosition(position);
+      this.position = position;
+    },
+    inspectByte(position_) {
+      const position = position_ ?? this.position;
+      this.assertPosition(position);
+      return this.bytes[position];
+    },
+    inspectBytes(length, position_) {
+      const position = position_ ?? this.position;
+      this.assertPosition(position + length - 1);
+      return this.bytes.subarray(position, position + length);
+    },
+    inspectUint8(position_) {
+      const position = position_ ?? this.position;
+      this.assertPosition(position);
+      return this.bytes[position];
+    },
+    inspectUint16(position_) {
+      const position = position_ ?? this.position;
+      this.assertPosition(position + 1);
+      return this.dataView.getUint16(position);
+    },
+    inspectUint24(position_) {
+      const position = position_ ?? this.position;
+      this.assertPosition(position + 2);
+      return (this.dataView.getUint16(position) << 8) + this.dataView.getUint8(position + 2);
+    },
+    inspectUint32(position_) {
+      const position = position_ ?? this.position;
+      this.assertPosition(position + 3);
+      return this.dataView.getUint32(position);
+    },
+    pushByte(byte) {
+      this.assertPosition(this.position);
+      this.bytes[this.position] = byte;
+      this.position++;
+    },
+    pushBytes(bytes) {
+      this.assertPosition(this.position + bytes.length - 1);
+      this.bytes.set(bytes, this.position);
+      this.position += bytes.length;
+    },
+    pushUint8(value2) {
+      this.assertPosition(this.position);
+      this.bytes[this.position] = value2;
+      this.position++;
+    },
+    pushUint16(value2) {
+      this.assertPosition(this.position + 1);
+      this.dataView.setUint16(this.position, value2);
+      this.position += 2;
+    },
+    pushUint24(value2) {
+      this.assertPosition(this.position + 2);
+      this.dataView.setUint16(this.position, value2 >> 8);
+      this.dataView.setUint8(this.position + 2, value2 & ~4294967040);
+      this.position += 3;
+    },
+    pushUint32(value2) {
+      this.assertPosition(this.position + 3);
+      this.dataView.setUint32(this.position, value2);
+      this.position += 4;
+    },
+    readByte() {
+      this.assertReadLimit();
+      this._touch();
+      const value2 = this.inspectByte();
+      this.position++;
+      return value2;
+    },
+    readBytes(length, size2) {
+      this.assertReadLimit();
+      this._touch();
+      const value2 = this.inspectBytes(length);
+      this.position += size2 ?? length;
+      return value2;
+    },
+    readUint8() {
+      this.assertReadLimit();
+      this._touch();
+      const value2 = this.inspectUint8();
+      this.position += 1;
+      return value2;
+    },
+    readUint16() {
+      this.assertReadLimit();
+      this._touch();
+      const value2 = this.inspectUint16();
+      this.position += 2;
+      return value2;
+    },
+    readUint24() {
+      this.assertReadLimit();
+      this._touch();
+      const value2 = this.inspectUint24();
+      this.position += 3;
+      return value2;
+    },
+    readUint32() {
+      this.assertReadLimit();
+      this._touch();
+      const value2 = this.inspectUint32();
+      this.position += 4;
+      return value2;
+    },
+    get remaining() {
+      return this.bytes.length - this.position;
+    },
+    setPosition(position) {
+      const oldPosition = this.position;
+      this.assertPosition(position);
+      this.position = position;
+      return () => this.position = oldPosition;
+    },
+    _touch() {
+      if (this.recursiveReadLimit === Number.POSITIVE_INFINITY)
+        return;
+      const count = this.getReadCount();
+      this.positionReadCount.set(this.position, count + 1);
+      if (count > 0)
+        this.recursiveReadCount++;
+    }
+  };
+});
+function bytesToBigInt(bytes, opts = {}) {
+  if (typeof opts.size !== "undefined")
+    assertSize2(bytes, { size: opts.size });
+  const hex = bytesToHex2(bytes, opts);
+  return hexToBigInt(hex, opts);
+}
+function bytesToBool(bytes_, opts = {}) {
+  let bytes = bytes_;
+  if (typeof opts.size !== "undefined") {
+    assertSize2(bytes, { size: opts.size });
+    bytes = trim(bytes);
+  }
+  if (bytes.length > 1 || bytes[0] > 1)
+    throw new InvalidBytesBooleanError(bytes);
+  return Boolean(bytes[0]);
+}
+function bytesToNumber(bytes, opts = {}) {
+  if (typeof opts.size !== "undefined")
+    assertSize2(bytes, { size: opts.size });
+  const hex = bytesToHex2(bytes, opts);
+  return hexToNumber(hex, opts);
+}
+function bytesToString(bytes_, opts = {}) {
+  let bytes = bytes_;
+  if (typeof opts.size !== "undefined") {
+    assertSize2(bytes, { size: opts.size });
+    bytes = trim(bytes, { dir: "right" });
+  }
+  return new TextDecoder().decode(bytes);
+}
+var init_fromBytes = __esm(() => {
+  init_encoding();
+  init_fromHex();
+  init_toHex();
+});
+function decodeAbiParameters(params, data) {
+  const bytes = typeof data === "string" ? hexToBytes2(data) : data;
+  const cursor = createCursor(bytes);
+  if (size(bytes) === 0 && params.length > 0)
+    throw new AbiDecodingZeroDataError;
+  if (size(data) && size(data) < 32)
+    throw new AbiDecodingDataSizeTooSmallError({
+      data: typeof data === "string" ? data : bytesToHex2(data),
+      params,
+      size: size(data)
+    });
+  let consumed = 0;
+  const values = [];
+  for (let i2 = 0;i2 < params.length; ++i2) {
+    const param = params[i2];
+    cursor.setPosition(consumed);
+    const [data2, consumed_] = decodeParameter(cursor, param, {
+      staticPosition: 0
+    });
+    consumed += consumed_;
+    values.push(data2);
+  }
+  return values;
+}
+function decodeParameter(cursor, param, { staticPosition }) {
+  const arrayComponents = getArrayComponents(param.type);
+  if (arrayComponents) {
+    const [length, type] = arrayComponents;
+    return decodeArray(cursor, { ...param, type }, { length, staticPosition });
+  }
+  if (param.type === "tuple")
+    return decodeTuple(cursor, param, { staticPosition });
+  if (param.type === "address")
+    return decodeAddress(cursor);
+  if (param.type === "bool")
+    return decodeBool(cursor);
+  if (param.type.startsWith("bytes"))
+    return decodeBytes(cursor, param, { staticPosition });
+  if (param.type.startsWith("uint") || param.type.startsWith("int"))
+    return decodeNumber(cursor, param);
+  if (param.type === "string")
+    return decodeString(cursor, { staticPosition });
+  throw new InvalidAbiDecodingTypeError(param.type, {
+    docsPath: "/docs/contract/decodeAbiParameters"
+  });
+}
+function decodeAddress(cursor) {
+  const value2 = cursor.readBytes(32);
+  return [checksumAddress(bytesToHex2(sliceBytes(value2, -20))), 32];
+}
+function decodeArray(cursor, param, { length, staticPosition }) {
+  if (!length) {
+    const offset = bytesToNumber(cursor.readBytes(sizeOfOffset));
+    const start = staticPosition + offset;
+    const startOfData = start + sizeOfLength;
+    cursor.setPosition(start);
+    const length2 = bytesToNumber(cursor.readBytes(sizeOfLength));
+    const dynamicChild = hasDynamicChild(param);
+    let consumed2 = 0;
+    const value3 = [];
+    for (let i2 = 0;i2 < length2; ++i2) {
+      cursor.setPosition(startOfData + (dynamicChild ? i2 * 32 : consumed2));
+      const [data, consumed_] = decodeParameter(cursor, param, {
+        staticPosition: startOfData
+      });
+      consumed2 += consumed_;
+      value3.push(data);
+    }
+    cursor.setPosition(staticPosition + 32);
+    return [value3, 32];
+  }
+  if (hasDynamicChild(param)) {
+    const offset = bytesToNumber(cursor.readBytes(sizeOfOffset));
+    const start = staticPosition + offset;
+    const value3 = [];
+    for (let i2 = 0;i2 < length; ++i2) {
+      cursor.setPosition(start + i2 * 32);
+      const [data] = decodeParameter(cursor, param, {
+        staticPosition: start
+      });
+      value3.push(data);
+    }
+    cursor.setPosition(staticPosition + 32);
+    return [value3, 32];
+  }
+  let consumed = 0;
+  const value2 = [];
+  for (let i2 = 0;i2 < length; ++i2) {
+    const [data, consumed_] = decodeParameter(cursor, param, {
+      staticPosition: staticPosition + consumed
+    });
+    consumed += consumed_;
+    value2.push(data);
+  }
+  return [value2, consumed];
+}
+function decodeBool(cursor) {
+  return [bytesToBool(cursor.readBytes(32), { size: 32 }), 32];
+}
+function decodeBytes(cursor, param, { staticPosition }) {
+  const [_, size2] = param.type.split("bytes");
+  if (!size2) {
+    const offset = bytesToNumber(cursor.readBytes(32));
+    cursor.setPosition(staticPosition + offset);
+    const length = bytesToNumber(cursor.readBytes(32));
+    if (length === 0) {
+      cursor.setPosition(staticPosition + 32);
+      return ["0x", 32];
+    }
+    const data = cursor.readBytes(length);
+    cursor.setPosition(staticPosition + 32);
+    return [bytesToHex2(data), 32];
+  }
+  const value2 = bytesToHex2(cursor.readBytes(Number.parseInt(size2), 32));
+  return [value2, 32];
+}
+function decodeNumber(cursor, param) {
+  const signed = param.type.startsWith("int");
+  const size2 = Number.parseInt(param.type.split("int")[1] || "256");
+  const value2 = cursor.readBytes(32);
+  return [
+    size2 > 48 ? bytesToBigInt(value2, { signed }) : bytesToNumber(value2, { signed }),
+    32
+  ];
+}
+function decodeTuple(cursor, param, { staticPosition }) {
+  const hasUnnamedChild = param.components.length === 0 || param.components.some(({ name }) => !name);
+  const value2 = hasUnnamedChild ? [] : {};
+  let consumed = 0;
+  if (hasDynamicChild(param)) {
+    const offset = bytesToNumber(cursor.readBytes(sizeOfOffset));
+    const start = staticPosition + offset;
+    for (let i2 = 0;i2 < param.components.length; ++i2) {
+      const component = param.components[i2];
+      cursor.setPosition(start + consumed);
+      const [data, consumed_] = decodeParameter(cursor, component, {
+        staticPosition: start
+      });
+      consumed += consumed_;
+      value2[hasUnnamedChild ? i2 : component?.name] = data;
+    }
+    cursor.setPosition(staticPosition + 32);
+    return [value2, 32];
+  }
+  for (let i2 = 0;i2 < param.components.length; ++i2) {
+    const component = param.components[i2];
+    const [data, consumed_] = decodeParameter(cursor, component, {
+      staticPosition
+    });
+    value2[hasUnnamedChild ? i2 : component?.name] = data;
+    consumed += consumed_;
+  }
+  return [value2, consumed];
+}
+function decodeString(cursor, { staticPosition }) {
+  const offset = bytesToNumber(cursor.readBytes(32));
+  const start = staticPosition + offset;
+  cursor.setPosition(start);
+  const length = bytesToNumber(cursor.readBytes(32));
+  if (length === 0) {
+    cursor.setPosition(staticPosition + 32);
+    return ["", 32];
+  }
+  const data = cursor.readBytes(length, 32);
+  const value2 = bytesToString(trim(data));
+  cursor.setPosition(staticPosition + 32);
+  return [value2, 32];
+}
+function hasDynamicChild(param) {
+  const { type } = param;
+  if (type === "string")
+    return true;
+  if (type === "bytes")
+    return true;
+  if (type.endsWith("[]"))
+    return true;
+  if (type === "tuple")
+    return param.components?.some(hasDynamicChild);
+  const arrayComponents = getArrayComponents(param.type);
+  if (arrayComponents && hasDynamicChild({ ...param, type: arrayComponents[1] }))
+    return true;
+  return false;
+}
+var sizeOfLength = 32;
+var sizeOfOffset = 32;
+var init_decodeAbiParameters = __esm(() => {
+  init_abi();
+  init_getAddress();
+  init_cursor2();
+  init_size();
+  init_slice();
+  init_fromBytes();
+  init_toBytes();
+  init_toHex();
+  init_encodeAbiParameters();
+});
+function decodeFunctionResult(parameters) {
+  const { abi, args, functionName, data } = parameters;
+  let abiItem = abi[0];
+  if (functionName) {
+    const item = getAbiItem({ abi, args, name: functionName });
+    if (!item)
+      throw new AbiFunctionNotFoundError(functionName, { docsPath: docsPath2 });
+    abiItem = item;
+  }
+  if (abiItem.type !== "function")
+    throw new AbiFunctionNotFoundError(undefined, { docsPath: docsPath2 });
+  if (!abiItem.outputs)
+    throw new AbiFunctionOutputsNotFoundError(abiItem.name, { docsPath: docsPath2 });
+  const values = decodeAbiParameters(abiItem.outputs, data);
+  if (values && values.length > 1)
+    return values;
+  if (values && values.length === 1)
+    return values[0];
+  return;
+}
+var docsPath2 = "/docs/contract/decodeFunctionResult";
+var init_decodeFunctionResult = __esm(() => {
+  init_abi();
+  init_decodeAbiParameters();
+  init_getAbiItem();
 });
 function isMessage(arg, schema) {
   const isMessage2 = arg !== null && typeof arg == "object" && "$typeName" in arg && typeof arg.$typeName == "string";
@@ -7386,6 +7944,20 @@ var LATEST_BLOCK_NUMBER = {
   absVal: Buffer.from([2]).toString("base64"),
   sign: "-1"
 };
+var encodeCallMsg = (payload) => {
+  const encodeField = (fieldName, value) => {
+    try {
+      return hexToBase64(value);
+    } catch (e) {
+      throw new Error(`Invalid hex in '${fieldName}' field of CallMsg: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+  return {
+    from: encodeField("from", payload.from),
+    to: encodeField("to", payload.to),
+    data: encodeField("data", payload.data)
+  };
+};
 function sendReport(runtime, report, fn) {
   const rawReport = report.x_generatedCodeOnly_unwrap();
   const request = fn(rawReport);
@@ -11514,6 +12086,12 @@ function simpleDescriptor(agg) {
 }
 function median() {
   return new ConsensusFieldAggregation(simpleDescriptor(AggregationType.MEDIAN));
+}
+function identical() {
+  return new ConsensusFieldAggregation(simpleDescriptor(AggregationType.IDENTICAL));
+}
+function ignore() {
+  return new ConsensusFieldAggregation;
 }
 
 class ConsensusFieldAggregation {
@@ -16441,6 +17019,8 @@ var sendErrorResponse = (error) => {
   }
   hostBindings.sendResponse(payload);
 };
+var zeroAddress = "0x0000000000000000000000000000000000000000";
+init_decodeFunctionResult();
 init_encodeFunctionData();
 var PolymarketOracleABI = [
   {
@@ -16473,6 +17053,25 @@ var PolymarketOracleABI = [
           { name: "question", type: "string" },
           { name: "endDate", type: "uint256" },
           { name: "active", type: "bool" }
+        ]
+      }
+    ],
+    outputs: []
+  },
+  {
+    name: "updateMarketsDirect",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "incoming",
+        type: "tuple[]",
+        components: [
+          { name: "conditionId", type: "bytes32" },
+          { name: "question", type: "string" },
+          { name: "endDate", type: "uint256" },
+          { name: "active", type: "bool" },
+          { name: "lastUpdate", type: "uint256" }
         ]
       }
     ],
@@ -16526,6 +17125,13 @@ var PolymarketOracleABI = [
     outputs: [{ name: "", type: "bytes10" }]
   },
   {
+    name: "ADMIN",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }]
+  },
+  {
     name: "MarketsUpdated",
     type: "event",
     anonymous: false,
@@ -16549,50 +17155,134 @@ var PolymarketOracleABI = [
       { name: "received", type: "bytes10" },
       { name: "expected", type: "bytes10" }
     ]
+  },
+  {
+    name: "Unauthorized",
+    type: "error",
+    inputs: []
   }
 ];
 var GAMMA_API_BASE = "https://gamma-api.polymarket.com/markets";
+var CLOB_API_BASE = "https://clob.polymarket.com/markets";
 var configSchema = exports_external.object({
   oracleAddress: exports_external.string(),
   chainSelectorName: exports_external.string(),
   gasLimit: exports_external.string()
 });
-var cachedMarkets = [];
-var fetchMarkets = (sendRequester, marketIds) => {
-  const markets = [];
-  for (const id of marketIds) {
-    const url = `${GAMMA_API_BASE}/${id}`;
-    const response = sendRequester.sendRequest({ method: "GET", url }).result();
-    if (response.statusCode === 404)
+var readOnChainMarkets = (runtime2, evmClient, conditionIds) => {
+  const { oracleAddress } = runtime2.config;
+  const existing = new Map;
+  for (const cid of conditionIds) {
+    const callData = encodeFunctionData({
+      abi: PolymarketOracleABI,
+      functionName: "getMarket",
+      args: [cid]
+    });
+    const resp = evmClient.callContract(runtime2, {
+      call: encodeCallMsg({
+        from: zeroAddress,
+        to: oracleAddress,
+        data: callData
+      }),
+      blockNumber: LAST_FINALIZED_BLOCK_NUMBER
+    }).result();
+    const returnData = bytesToHex(resp.data);
+    if (!returnData || returnData === "0x")
       continue;
-    if (response.statusCode !== 200) {
-      throw new Error(`HTTP request failed for market ${id}: ${response.statusCode}`);
-    }
-    const responseText = Buffer.from(response.body).toString("utf-8");
-    const m = JSON.parse(responseText);
-    if (!m.conditionId)
+    const raw = decodeFunctionResult({
+      abi: PolymarketOracleABI,
+      functionName: "getMarket",
+      data: returnData
+    });
+    const decoded = raw;
+    const lastUpdate = BigInt(decoded.lastUpdate ?? decoded[4] ?? 0);
+    if (lastUpdate === 0n)
       continue;
-    markets.push({
-      conditionId: m.conditionId,
-      question: m.question,
-      endDate: m.endDate,
-      active: m.active
+    existing.set(cid, {
+      conditionId: decoded.conditionId ?? decoded[0],
+      question: decoded.question ?? decoded[1],
+      endDate: BigInt(decoded.endDate ?? decoded[2] ?? 0),
+      active: decoded.active ?? decoded[3],
+      lastUpdate
     });
   }
-  cachedMarkets = markets;
-  return { count: markets.length };
+  return existing;
 };
-var writeMarketsOnChain = (runtime2, markets) => {
-  const { oracleAddress, chainSelectorName, gasLimit } = runtime2.config;
-  const network282 = getNetwork({
-    chainFamily: "evm",
-    chainSelectorName,
-    isTestnet: true
-  });
-  if (!network282) {
-    throw new Error(`Network not found for chain selector: ${chainSelectorName}`);
+var fetchMarkets = (sendRequester, marketIds) => {
+  const markets = [];
+  const logs = [];
+  const sortedIds = [...marketIds].sort((a, b) => a - b);
+  for (const id of sortedIds) {
+    const gammaUrl = `${GAMMA_API_BASE}/${id}`;
+    const gammaResp = sendRequester.sendRequest({ method: "GET", url: gammaUrl }).result();
+    if (gammaResp.statusCode === 404) {
+      logs.push(`[${id}] Gamma: 404 (skipped)`);
+      continue;
+    }
+    if (gammaResp.statusCode !== 200) {
+      throw new Error(`Gamma API failed for market ${id}: ${gammaResp.statusCode}`);
+    }
+    const gamma = JSON.parse(Buffer.from(gammaResp.body).toString("utf-8"));
+    if (!gamma.conditionId) {
+      logs.push(`[${id}] Gamma: no conditionId (skipped)`);
+      continue;
+    }
+    logs.push(`[${id}] Gamma: conditionId=${gamma.conditionId}, question="${gamma.question}", endDate=${gamma.endDate}, active=${gamma.active}`);
+    const clobUrl = `${CLOB_API_BASE}/${gamma.conditionId}`;
+    const clobResp = sendRequester.sendRequest({ method: "GET", url: clobUrl }).result();
+    if (clobResp.statusCode === 404) {
+      logs.push(`[${id}] CLOB: 404 (skipped)`);
+      continue;
+    }
+    if (clobResp.statusCode !== 200) {
+      throw new Error(`CLOB API failed for condition ${gamma.conditionId}: ${clobResp.statusCode}`);
+    }
+    const clob = JSON.parse(Buffer.from(clobResp.body).toString("utf-8"));
+    logs.push(`[${id}] CLOB:  conditionId=${clob.condition_id}, question="${clob.question}", endDate=${clob.end_date_iso}, active=${clob.active}`);
+    if (clob.condition_id !== gamma.conditionId) {
+      throw new Error(`Source mismatch for market ${id}: conditionId differs (gamma=${gamma.conditionId}, clob=${clob.condition_id})`);
+    }
+    if (clob.question !== gamma.question) {
+      throw new Error(`Source mismatch for market ${id}: question differs`);
+    }
+    const gammaDate = gamma.endDate.split("T")[0];
+    const clobDate = clob.end_date_iso.split("T")[0];
+    if (gammaDate !== clobDate) {
+      throw new Error(`Source mismatch for market ${id}: endDate differs (gamma=${gamma.endDate}, clob=${clob.end_date_iso})`);
+    }
+    if (clob.active !== gamma.active) {
+      throw new Error(`Source mismatch for market ${id}: active differs (gamma=${gamma.active}, clob=${clob.active})`);
+    }
+    logs.push(`[${id}] ✓ Cross-source validated`);
+    markets.push({
+      conditionId: gamma.conditionId,
+      question: gamma.question,
+      endDate: gamma.endDate,
+      active: gamma.active
+    });
   }
-  const evmClient = new ClientCapability(network282.chainSelector.selector);
+  const sorted = markets.sort((a, b) => a.conditionId.localeCompare(b.conditionId));
+  const marketsJson = JSON.stringify(sorted);
+  return { count: markets.length, marketsJson, debugLog: logs.join(`
+`) };
+};
+var computeDelta = (fetched, onChain) => {
+  const delta = [];
+  for (const m of fetched) {
+    const existing = onChain.get(m.conditionId);
+    if (!existing) {
+      delta.push(m);
+      continue;
+    }
+    const endDateUnix = BigInt(Math.floor(new Date(m.endDate).getTime() / 1000));
+    if (existing.question !== m.question || existing.endDate !== endDateUnix || existing.active !== m.active) {
+      delta.push(m);
+    }
+  }
+  return delta;
+};
+var writeMarketsOnChain = (runtime2, evmClient, markets) => {
+  const { oracleAddress, gasLimit } = runtime2.config;
   const callData = encodeFunctionData({
     abi: PolymarketOracleABI,
     functionName: "updateMarkets",
@@ -16620,21 +17310,48 @@ var writeMarketsOnChain = (runtime2, markets) => {
     throw new Error(`writeReport failed: ${resp.errorMessage ?? resp.txStatus}`);
   }
   const txHash = bytesToHex(resp.txHash ?? new Uint8Array(32));
-  runtime2.log(`Markets written on-chain: ${txHash}`);
   return txHash;
 };
 var onHttpTrigger = (runtime2, payload) => {
   const inputJson = Buffer.from(payload.input).toString("utf-8");
   const input = JSON.parse(inputJson);
   runtime2.log(`Received request for ${input.marketIds.length} markets: ${input.marketIds.join(", ")}`);
+  const { chainSelectorName } = runtime2.config;
+  const network282 = getNetwork({ chainFamily: "evm", chainSelectorName, isTestnet: true });
+  if (!network282)
+    throw new Error(`Network not found: ${chainSelectorName}`);
+  const evmClient = new ClientCapability(network282.chainSelector.selector);
+  runtime2.log(`[Step 1] Fetching markets from Gamma + CLOB APIs...`);
   const httpCapability = new ClientCapability2;
   const result = httpCapability.sendRequest(runtime2, fetchMarkets, ConsensusAggregationByFields({
-    count: median
+    count: median,
+    marketsJson: identical,
+    debugLog: ignore
   }))(input.marketIds).result();
-  const markets = cachedMarkets;
-  runtime2.log(`Fetched ${result.count} markets, writing on-chain...`);
-  runtime2.log(JSON.stringify(markets, null, 2));
-  const txHash = writeMarketsOnChain(runtime2, markets);
+  runtime2.log(result.debugLog ?? "(debug log not available after consensus)");
+  const fetched = JSON.parse(result.marketsJson);
+  runtime2.log(`[Step 1] ${fetched.length} markets fetched and cross-source validated`);
+  if (fetched.length === 0) {
+    runtime2.log("No markets to process — done");
+    return "0x";
+  }
+  runtime2.log(`[Step 2] Reading on-chain oracle state...`);
+  const conditionIds = fetched.map((m) => m.conditionId);
+  const onChain = readOnChainMarkets(runtime2, evmClient, conditionIds);
+  runtime2.log(`[Step 2] ${onChain.size} markets already on-chain`);
+  const delta = computeDelta(fetched, onChain);
+  runtime2.log(`[Step 3] Delta: ${delta.length} new/changed markets out of ${fetched.length}`);
+  if (delta.length === 0) {
+    runtime2.log("All markets up-to-date — no write needed");
+    return "0x";
+  }
+  for (const m of delta) {
+    const status = onChain.has(m.conditionId) ? "UPDATED" : "NEW";
+    runtime2.log(`  ${status}: "${m.question}" (${m.conditionId.slice(0, 10)}...)`);
+  }
+  runtime2.log(`[Step 4] Writing ${delta.length} markets on-chain...`);
+  const txHash = writeMarketsOnChain(runtime2, evmClient, delta);
+  runtime2.log(`[Step 4] Done — tx: ${txHash}`);
   return txHash;
 };
 var initWorkflow = (config) => {
