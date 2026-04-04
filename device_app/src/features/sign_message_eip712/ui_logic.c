@@ -14,6 +14,7 @@
 #include "network.h"
 #include "time_format.h"
 #include "features/provide_market_context/market_context.h"
+#include "features/provide_market_context/auth_context.h"
 #include "lists.h"
 #include "ui_utils.h"
 #include "utils.h"
@@ -1081,6 +1082,29 @@ static void ui_712_inject_mcp_screens(void) {
 }
 
 /**
+ * Inject auth context screens (Service + Address) at the BEGINNING of the
+ * EIP-712 UI pair list for ClobAuth clear signing.
+ */
+static void ui_712_inject_auth_screens(void) {
+    if (!auth_context_is_valid()) return;
+
+    s_ui_712_pair *service = mcp_alloc_pair("Service", g_auth_context.auth_label);
+    s_ui_712_pair *address = mcp_alloc_pair("Address", g_auth_context.auth_address);
+
+    if (!service || !address) {
+        PRINTF("[AUTH] Failed to allocate auth UI pairs\n");
+        return;
+    }
+
+    // Link: Service -> Address -> existing pairs
+    ((flist_node_t *) service)->next = (flist_node_t *) address;
+    ((flist_node_t *) address)->next = (flist_node_t *) ui_ctx->ui_pairs;
+    ui_ctx->ui_pairs = service;
+
+    PRINTF("[AUTH] Injected 2 auth UI screens at front\n");
+}
+
+/**
  * Used to signal that we are done with reviewing the structs and we can now have
  * the option to approve or reject the signature
  */
@@ -1092,6 +1116,7 @@ void ui_712_end_sign(void) {
 
     // Inject MCP market context screens at the front of the review
     ui_712_inject_mcp_screens();
+    ui_712_inject_auth_screens();
 
 #ifdef SCREEN_SIZE_WALLET
     if (true) {
