@@ -184,6 +184,7 @@ static bool prepare_infos(nbgl_contentInfoList_t *infos) {
         if ((extensions[contract_idx].title = APP_MEM_STRDUP(tmp_buf)) == NULL) {
             return false;
         }
+#if 0  // Etherscan QR disabled for Polyledger rebrand
         // Etherscan only for mainnet
         if (get_tx_chain_id() == ETHEREUM_MAINNET_CHAINID) {
             if ((extensions[contract_idx].explanation =
@@ -201,6 +202,7 @@ static bool prepare_infos(nbgl_contentInfoList_t *infos) {
             return false;
         }
         extensions[contract_idx].aliasType = QR_CODE_ALIAS;
+#endif
     }
 #endif
 
