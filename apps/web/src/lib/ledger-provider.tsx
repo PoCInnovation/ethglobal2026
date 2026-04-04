@@ -40,6 +40,11 @@ import {
 	serializeTransaction,
 } from "viem";
 import { base, baseSepolia, sepolia } from "viem/chains";
+import {
+	isPolymarketOrder,
+	buildPolymarketContext,
+	fetchSignedMCPPayload,
+} from "./polymarket-context";
 
 // =============================================================================
 // Types
@@ -491,6 +496,58 @@ function buildEthSigner(dmk: DeviceManagementKit, sessionId: DeviceSessionId) {
 	})
 		.withContextModule(contextModule)
 		.build();
+}
+
+// =============================================================================
+// MCP (Market Context Protocol) APDU helper
+// =============================================================================
+
+const INS_PROVIDE_MARKET_CONTEXT = 0x3a;
+const APDU_CLA = 0xe0;
+const MCP_P2_FIRST = 0x01;
+const MCP_P2_FOLLOWING = 0x00;
+const APDU_MAX_DATA = 0xff;
+
+/**
+ * Send a signed MCP TLV payload to the device as one or more APDU chunks.
+ * Mirrors the framing in command_builder.py `common_tlv_serialize`.
+ */
+async function sendMcpApdu(
+	dmk: DeviceManagementKit,
+	sessionId: DeviceSessionId,
+	tlvPayload: Uint8Array,
+): Promise<void> {
+	// Prepend 2-byte big-endian length (matches Python struct.pack(">H", len))
+	const lenBuf = new Uint8Array(2);
+	new DataView(lenBuf.buffer).setUint16(0, tlvPayload.length, false);
+	const fullPayload = new Uint8Array(lenBuf.length + tlvPayload.length);
+	fullPayload.set(lenBuf, 0);
+	fullPayload.set(tlvPayload, 2);
+
+	let offset = 0;
+	let isFirst = true;
+	while (offset < fullPayload.length) {
+		const chunkLen = Math.min(APDU_MAX_DATA, fullPayload.length - offset);
+		const chunk = fullPayload.slice(offset, offset + chunkLen);
+		const p2 = isFirst ? MCP_P2_FIRST : MCP_P2_FOLLOWING;
+
+		const apdu = new Uint8Array(5 + chunkLen);
+		apdu[0] = APDU_CLA;
+		apdu[1] = INS_PROVIDE_MARKET_CONTEXT;
+		apdu[2] = 0x00; // P1
+		apdu[3] = p2;
+		apdu[4] = chunkLen;
+		apdu.set(chunk, 5);
+
+		const resp = await dmk.sendApdu({ sessionId, apdu });
+		const sw = ((resp.statusCode[0] ?? 0) << 8) | (resp.statusCode[1] ?? 0);
+		if (sw !== 0x9000) {
+			throw new Error(`MCP APDU rejected: 0x${sw.toString(16).padStart(4, "0")}`);
+		}
+
+		offset += chunkLen;
+		isFirst = false;
+	}
 }
 
 // =============================================================================
@@ -1397,7 +1454,29 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 			const parsed: TypedData =
 				typeof typedData === "string" ? JSON.parse(typedData) : (typedData as TypedData);
 
+			// MCP: pre-fetch market context for Polymarket orders
+			let mcpPayload: Uint8Array | null = null;
+			if (isPolymarketOrder(parsed.primaryType, parsed.domain as Record<string, unknown>)) {
+				try {
+					const mcpInfo = await buildPolymarketContext(
+						parsed.message,
+						Number(parsed.domain.chainId ?? 137),
+					);
+					mcpPayload = await fetchSignedMCPPayload(mcpInfo);
+				} catch (e) {
+					console.warn("[MCP] Failed to fetch market context, signing without clear screens:", e);
+				}
+			}
+
 			const doSign = async (): Promise<string> => {
+				// Send MCP APDU before EIP-712 signing so the device shows market info
+				if (mcpPayload) {
+					try {
+						await sendMcpApdu(dmk, sessionId, mcpPayload);
+					} catch (e) {
+						console.warn("[MCP] APDU send failed, proceeding without clear screens:", e);
+					}
+				}
 				const ethSigner = buildEthSigner(dmk, sessionId);
 				const { observable } = ethSigner.signTypedData(derivationPathRef.current, parsed, {
 					skipOpenApp: true,
