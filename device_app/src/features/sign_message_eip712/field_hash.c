@@ -11,6 +11,7 @@
 #include "typed_data.h"
 #include "commands_712.h"
 #include "hash_bytes.h"
+#include "market_context.h"  // g_eip712_extracted_token_id
 
 static s_field_hashing *fh = NULL;
 
@@ -200,6 +201,24 @@ static bool field_hash_domain_special_fields(const s_struct_712_field *field_ptr
 }
 
 /**
+ * Extract special fields from message for MCP binding.
+ * Currently captures tokenId (uint256) for Polymarket Order validation.
+ */
+static void field_hash_message_mcp_fields(const s_struct_712_field *field_ptr,
+                                          const uint8_t *data,
+                                          uint8_t data_length) {
+    if (field_ptr->key_name == NULL) return;
+    if (strcmp(field_ptr->key_name, "tokenId") != 0) return;
+    if (field_ptr->type != TYPE_SOL_UINT) return;
+    if (data_length > INT256_LENGTH) return;
+
+    // Zero-pad and right-align (big-endian uint256)
+    explicit_bzero(g_eip712_extracted_token_id, INT256_LENGTH);
+    memcpy(&g_eip712_extracted_token_id[INT256_LENGTH - data_length], data, data_length);
+    g_eip712_token_id_extracted = true;
+}
+
+/**
  * Finalize the data hashing
  *
  * @param[in] field_ptr pointer to the struct field definition
@@ -228,6 +247,8 @@ static bool field_hash_finalize(const s_struct_712_field *field_ptr,
         if (field_hash_domain_special_fields(field_ptr, data, data_length) == false) {
             return false;
         }
+    } else if (path_get_root_type() == ROOT_MESSAGE) {
+        field_hash_message_mcp_fields(field_ptr, data, data_length);
     }
     path_advance(true);
     fh->state = FHS_IDLE;

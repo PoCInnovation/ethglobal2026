@@ -26,3 +26,10 @@ extern market_context_t g_market_context;
 
 void market_context_clear(void);
 bool market_context_is_valid(void);
+
+// Storage for tokenId extracted from EIP-712 message during parsing.
+// Used to bind MCP context to the actual signed message.
+extern uint8_t g_eip712_extracted_token_id[INT256_LENGTH];
+extern bool g_eip712_token_id_extracted;
+
+void market_context_clear_eip712_binding(void);
