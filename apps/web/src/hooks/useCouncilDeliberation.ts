@@ -1,7 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { CouncilState } from "@/lib/councilTypes";
 
-const API_BASE = import.meta.env.DEV ? import.meta.env.VITE_BACKEND_URL || "" : "";
+// Same-origin `/api/*` as wallet-auth and intents queries — Vite proxies to Express in dev.
+// Do not use VITE_BACKEND_URL here: cross-origin EventSource often fails or stalls while fetch works.
+const API_BASE = "";
 
 const initialState: CouncilState = {
   phase: "idle",
@@ -158,14 +160,21 @@ export function useCouncilDeliberation(intentId: string | null) {
   const start = useCallback(() => {
     if (!intentId) return;
 
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+
     setState({ ...initialState, phase: "connecting" });
 
-    const url = `${API_BASE}/api/council/deliberate?intentId=${intentId}`;
+    const url = `${API_BASE}/api/council/deliberate?intentId=${encodeURIComponent(intentId)}`;
     console.log("[Council] Connecting →", url);
 
-    console.log("[Council] Opening SSE...");
     const es = new EventSource(url, { withCredentials: true });
     eventSourceRef.current = es;
+
+    es.onopen = () => {
+      console.log("[Council] SSE open");
+    };
+
     openEventSource(es);
   }, [intentId, openEventSource]);
 

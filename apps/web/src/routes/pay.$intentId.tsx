@@ -1,5 +1,6 @@
 import { IntentDetailContent } from "@/components/intents/IntentDetailContent";
 import { CouncilDeliberation } from "@/components/council/CouncilDeliberation";
+import type { CouncilCompletePayload } from "@/lib/councilTypes";
 import { Spinner } from "@/components/ui/Spinner";
 import { useLedger } from "@/lib/ledger-provider";
 import { useWalletAuth } from "@/lib/wallet-auth";
@@ -49,10 +50,7 @@ function PayPage() {
 	const isX402 = isTransfer && !!(intent?.details as { x402?: { accepted?: unknown } })?.x402?.accepted;
 
 	// Council deliberation state for Polymarket trades
-	const [councilResult, setCouncilResult] = useState<{
-		approved: boolean;
-		ratio: number;
-	} | null>(null);
+	const [councilResult, setCouncilResult] = useState<CouncilCompletePayload | null>(null);
 	const councilDone = councilResult !== null;
 	const councilDeliberating = isPolymarket && isPending && !councilDone;
 

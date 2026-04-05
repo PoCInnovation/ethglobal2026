@@ -44,10 +44,9 @@ type VerifyResponse = {
 async function checkExistingSession(wallet: string): Promise<boolean> {
 	try {
 		const res = await fetch(`${API_BASE}/api/me`, { credentials: "include" });
-		if (!res.ok) return false;
-		const json = (await res.json()) as MeResponse;
+		const json = (await res.json().catch(() => null)) as MeResponse | null;
+		if (!json || json.success !== true) return false;
 		return (
-			json.success === true &&
 			typeof json.walletAddress === "string" &&
 			json.walletAddress.toLowerCase() === wallet
 		);

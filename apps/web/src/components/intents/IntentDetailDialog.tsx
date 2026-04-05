@@ -7,7 +7,8 @@ import {
 	DialogFooter,
 	DialogHeader,
 } from "@ledgerhq/lumen-ui-react";
-import { useState, useCallback } from "react";
+import type { CouncilArchivedRecord } from "@/lib/councilTypes";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { CouncilDeliberation } from "@/components/council/CouncilDeliberation";
 import { IntentDetailContent } from "./IntentDetailContent";
 
@@ -36,13 +37,34 @@ export function IntentDetailDialog({
 }: IntentDetailDialogProps) {
 	const [councilDone, setCouncilDone] = useState(councilAlreadyDone);
 	const [councilVerdict, setCouncilVerdict] = useState<{ approved: boolean } | null>(null);
+	/** Snapshot from live SSE — `intent` from the client cache never includes server-only `councilResult`. */
+	const [archivedCouncilRecord, setArchivedCouncilRecord] = useState<CouncilArchivedRecord | null>(null);
 	// Council deliberation only starts when user clicks "Analyze"
 	const [councilStarted, setCouncilStarted] = useState(false);
 
+	/** Last intent id we synced — avoids resetting when only `councilAlreadyDone` flips (parent adds id after deliberation). */
+	const councilResetIntentIdRef = useRef<string | undefined>(undefined);
+
+	useEffect(() => {
+		if (!intent?.id) {
+			councilResetIntentIdRef.current = undefined;
+			return;
+		}
+		const id = intent.id;
+		// Same intent as last sync: e.g. parent set `deliberatedIds` → councilAlreadyDone true — must NOT wipe verdict / archive / panel
+		if (councilResetIntentIdRef.current === id) return;
+		councilResetIntentIdRef.current = id;
+		setCouncilDone(councilAlreadyDone);
+		setCouncilStarted(false);
+		setCouncilVerdict(null);
+		setArchivedCouncilRecord(null);
+	}, [intent?.id, councilAlreadyDone]);
+
 	const handleCouncilComplete = useCallback(
-		(result: { approved: boolean; ratio: number }) => {
+		(payload: { approved: boolean; ratio: number; record: CouncilArchivedRecord }) => {
 			setCouncilDone(true);
-			setCouncilVerdict({ approved: result.approved });
+			setCouncilVerdict({ approved: payload.approved });
+			setArchivedCouncilRecord(payload.record);
 			onCouncilComplete?.(intent?.id ?? "");
 		},
 		[intent?.id, onCouncilComplete],
@@ -56,6 +78,7 @@ export function IntentDetailDialog({
 		setCouncilStarted(false);
 		setCouncilDone(false);
 		setCouncilVerdict(null);
+		setArchivedCouncilRecord(null);
 	};
 	const isTransfer = intent.details.type === "transfer";
 	const isX402 =
@@ -156,7 +179,7 @@ export function IntentDetailDialog({
 									className="px-16 py-14 border-t flex flex-col gap-8"
 									style={{ borderColor: "rgba(255,255,255,0.07)" }}
 								>
-									{isPending && !councilDone && councilStarted && (
+									{isPending && !councilDone && (
 										<div className="flex items-center justify-center gap-6 py-4">
 											<span
 												className="size-[5px] rounded-full animate-pulse"
@@ -167,7 +190,6 @@ export function IntentDetailDialog({
 											</span>
 										</div>
 									)}
-									{/* Always show Sign/Reject actions */}
 									<IntentDetailContent.Actions intent={intent} onClose={handleClose} />
 								</div>
 							</div>
@@ -178,8 +200,8 @@ export function IntentDetailDialog({
 								style={{ background: "#0d0d0f" }}
 							>
 								{!councilStarted ? (
-									/* Council not started — show Analyze button */
 									<div className="flex-1 flex flex-col items-center justify-center gap-16 px-20">
+										{/* Council not started — show Analyze button */}
 										<span className="text-[40px]">🧑‍⚖️</span>
 										<div className="text-center">
 											<p className="text-[14px] font-semibold text-white/70">
@@ -206,14 +228,15 @@ export function IntentDetailDialog({
 										</p>
 									</div>
 								) : isPending && !councilDone ? (
-									/* Council deliberating */
 									<CouncilDeliberation
 										intentId={intent.id}
 										onComplete={handleCouncilComplete}
 									/>
 								) : (
-									/* Council done or non-pending */
-									<CouncilResultReadonly intent={intent} />
+									<CouncilResultReadonly
+										intent={intent}
+										archivedRecord={archivedCouncilRecord}
+									/>
 								)}
 							</div>
 						</div>
@@ -243,57 +266,18 @@ export function IntentDetailDialog({
 // CouncilResultReadonly — cached council result for non-pending trades
 // =============================================================================
 
-const AGENT_ACCENT: Record<string, { name: string; dot: string; border: string; bg: string }> = {
-	bull: {
-		name: "#34d399",
-		dot: "#34d399",
-		border: "rgba(52,211,153,0.2)",
-		bg: "rgba(52,211,153,0.05)",
-	},
-	bear: {
-		name: "#fbbf24",
-		dot: "#fbbf24",
-		border: "rgba(251,191,36,0.2)",
-		bg: "rgba(251,191,36,0.05)",
-	},
-	quant: {
-		name: "#38bdf8",
-		dot: "#38bdf8",
-		border: "rgba(56,189,248,0.2)",
-		bg: "rgba(56,189,248,0.05)",
-	},
-};
+const RIGHT_AGENTS_READONLY = new Set(["quant"]);
 
-function agentAccent(id: string) {
-	return (
-		AGENT_ACCENT[id] ?? {
-			name: "#a78bfa",
-			dot: "#a78bfa",
-			border: "rgba(167,139,250,0.2)",
-			bg: "rgba(167,139,250,0.05)",
-		}
-	);
-}
-
-function CouncilResultReadonly({ intent }: { intent: Intent }) {
-	const councilResult = (intent.details as { councilResult?: unknown })
-		.councilResult as
-		| {
-				approved: boolean;
-				ratio: number;
-				totalFor: number;
-				totalAgainst: number;
-				totalAbstain: number;
-				agents: Array<{
-					agentId: string;
-					agentName: string;
-					role: string;
-					avatar: string;
-					rounds: string[];
-					vote: string;
-				}>;
-		  }
-		| undefined;
+function CouncilResultReadonly({
+	intent,
+	archivedRecord,
+}: {
+	intent: Intent;
+	archivedRecord?: CouncilArchivedRecord | null;
+}) {
+	const fromIntent = (intent.details as { councilResult?: CouncilArchivedRecord | undefined })
+		.councilResult;
+	const councilResult = archivedRecord ?? fromIntent;
 
 	if (!councilResult) {
 		return (
@@ -308,69 +292,82 @@ function CouncilResultReadonly({ intent }: { intent: Intent }) {
 	const pct = Math.round(councilResult.ratio * 100);
 
 	return (
-		<div className="flex-1 overflow-y-auto px-20 py-16 flex flex-col gap-16" style={{ scrollbarWidth: "none" }}>
-			<span className="text-[10px] font-mono uppercase tracking-[0.15em]" style={{ color: "#4a4a55" }}>
-				Council · Archived Record
-			</span>
-
-			{councilResult.agents.map((agent) => {
-				const accent = agentAccent(agent.agentId);
-				return (
-					<div key={agent.agentId} className="flex flex-col gap-8">
-						<div className="flex items-center gap-8">
-							<span className="size-[6px] rounded-full flex-shrink-0" style={{ background: accent.dot }} />
-							<span className="text-[11px] font-semibold font-mono uppercase tracking-wide" style={{ color: accent.name }}>
-								{agent.avatar} {agent.agentName}
-							</span>
-							<span className="text-[10px] font-mono" style={{ color: "#4a4a55" }}>
-								{agent.role}
-							</span>
-							{agent.vote === "FOR" && (
-								<span className="text-[9px] font-mono font-semibold tracking-widest px-6 py-1 rounded-full" style={{ color: "#34d399", border: "1px solid rgba(52,211,153,0.3)", background: "rgba(52,211,153,0.08)" }}>
-									FOR
-								</span>
-							)}
-							{agent.vote === "AGAINST" && (
-								<span className="text-[9px] font-mono font-semibold tracking-widest px-6 py-1 rounded-full" style={{ color: "#f87171", border: "1px solid rgba(248,113,113,0.3)", background: "rgba(248,113,113,0.08)" }}>
-									AGAINST
-								</span>
-							)}
-						</div>
-						{agent.rounds.map((content, idx) => (
-							<div
-								key={idx}
-								className="ml-14 rounded-xl px-14 py-10 border-l-2"
-								style={{ background: accent.bg, border: `1px solid ${accent.border}`, borderLeft: `2px solid ${accent.dot}` }}
-							>
-								<p className="text-[12px] leading-[1.75] font-mono whitespace-pre-wrap" style={{ color: "rgba(255,255,255,0.7)" }}>
-									{content.replace(/\n*VOTE:\s*(FOR|AGAINST)\b.*/i, "").trim()}
-								</p>
-							</div>
-						))}
-					</div>
-				);
-			})}
-
-			{/* Verdict */}
-			<div
-				className="rounded-xl px-16 py-12 flex items-center gap-12"
-				style={
-					councilResult.approved
-						? { background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)" }
-						: { background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)" }
-				}
-			>
-				<span className="text-xl" style={{ color: councilResult.approved ? "#34d399" : "#f87171" }}>
-					{councilResult.approved ? "✓" : "✗"}
+		<div className="flex-1 flex flex-col min-h-0">
+			{/* Scrollable chat area */}
+			<div className="flex-1 overflow-y-auto px-20 py-16 flex flex-col gap-12" style={{ scrollbarWidth: "none" }}>
+				<span className="text-[10px] font-mono uppercase tracking-[0.15em]" style={{ color: "#4a4a55" }}>
+					Council · Archived Record
 				</span>
-				<div className="flex flex-col gap-1">
-					<span className="text-[13px] font-semibold tracking-wide" style={{ color: councilResult.approved ? "#34d399" : "#f87171" }}>
-						{councilResult.approved ? "TRADE APPROVED" : "TRADE REJECTED"}
+
+				{councilResult.agents.map((agent) => {
+					const isRight = RIGHT_AGENTS_READONLY.has(agent.agentId);
+					return (
+						<div key={agent.agentId} className="flex flex-col gap-8">
+							{agent.rounds.map((content, idx) => {
+								const text = content.replace(/\n*VOTE:\s*(FOR|AGAINST)\b.*/i, "").trim();
+								return (
+									<div
+										key={idx}
+										className={`flex flex-col ${isRight ? "items-end" : "items-start"} max-w-[85%] ${isRight ? "self-end" : "self-start"}`}
+									>
+										{idx === 0 && (
+											<div className={`flex items-baseline gap-6 mb-3 ${isRight ? "flex-row-reverse" : ""}`}>
+												<span className="text-[11px] font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>
+													{agent.avatar} {agent.agentName}
+												</span>
+												{agent.vote === "FOR" && (
+													<span className="text-[10px] font-mono tracking-wider" style={{ color: "#6ee7b7" }}>FOR</span>
+												)}
+												{agent.vote === "AGAINST" && (
+													<span className="text-[10px] font-mono tracking-wider" style={{ color: "#fca5a5" }}>AGAINST</span>
+												)}
+											</div>
+										)}
+										<div
+											className="px-14 py-10"
+											style={{
+												background: isRight ? "#0b84fe" : "#2c2c2e",
+												borderRadius: isRight ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+											}}
+										>
+											<p className="text-[13px] leading-[1.65] whitespace-pre-wrap" style={{ color: "#fff" }}>
+												{text}
+											</p>
+										</div>
+									</div>
+								);
+							})}
+						</div>
+					);
+				})}
+			</div>
+
+			{/* Pinned bottom — verdict + summary */}
+			<div className="flex-shrink-0 flex flex-col gap-10 px-20 py-12">
+				{/* Verdict */}
+				<div
+					className="w-full rounded-xl px-20 py-14 flex items-center justify-center gap-8"
+					style={{ background: councilResult.approved ? "#22c55e" : "#ef4444" }}
+				>
+					<span className="text-[14px] font-semibold text-white">
+						{councilResult.approved ? "✓ Approved" : "✗ Rejected"}
 					</span>
-					<span className="text-[11px] font-mono" style={{ color: "#4a4a55" }}>
-						{councilResult.totalFor}/{total} FOR · {pct}% approval
+					<span className="text-[12px] text-white/70">
+						{councilResult.totalFor}/{total} FOR · {pct}%
 					</span>
 				</div>
+
+				{/* Summary — white box */}
+				{councilResult.summary && (
+					<div
+						className="w-full rounded-xl px-20 py-14 flex items-center justify-center"
+						style={{ background: "#ffffff" }}
+					>
+						<p className="text-[14px] font-medium text-black text-center leading-snug">
+							{councilResult.summary}
+						</p>
+					</div>
+				)}
 			</div>
 		</div>
 	);

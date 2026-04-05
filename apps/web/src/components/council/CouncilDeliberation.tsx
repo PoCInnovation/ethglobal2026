@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useCouncilDeliberation } from "@/hooks/useCouncilDeliberation";
-import type { AgentState, AgentVote, CouncilState } from "@/lib/councilTypes";
+import type { AgentState, AgentVote, CouncilCompletePayload, CouncilState } from "@/lib/councilTypes";
+import { councilStateToArchivedRecord } from "@/lib/councilTypes";
 import { Spinner } from "@/components/ui/Spinner";
 import { Button } from "@ledgerhq/lumen-ui-react";
 
@@ -10,7 +11,7 @@ import { Button } from "@ledgerhq/lumen-ui-react";
 
 interface CouncilDeliberationProps {
   intentId: string;
-  onComplete: (result: { approved: boolean; ratio: number }) => void;
+  onComplete: (payload: CouncilCompletePayload) => void;
 }
 
 // =============================================================================
@@ -54,8 +55,12 @@ function VoteTag({ vote }: { vote: AgentVote }) {
 }
 
 // =============================================================================
-// Single agent message block
+// Single agent message block — iMessage style
+// Bull Analyst & Risk Manager → left (gray bubble)
+// Contrarian → right (blue bubble)
 // =============================================================================
+
+const RIGHT_AGENTS = new Set(["quant"]);
 
 function MessageBlock({
   agent,
@@ -70,42 +75,47 @@ function MessageBlock({
   const voteMatch = content.match(/VOTE:\s*(FOR|AGAINST)\b/i);
   const vote = voteMatch?.[1] ? (voteMatch[1].toUpperCase() as AgentVote) : null;
 
-  const style = agentStyle(agent.id);
+  const isRight = RIGHT_AGENTS.has(agent.id);
 
   return (
-    <div
-      className="pl-12 border-l-2"
-      style={{ borderColor: style.bar }}
-    >
+    <div className={`flex flex-col ${isRight ? "items-end" : "items-start"} max-w-[85%] ${isRight ? "self-end" : "self-start"}`}>
       {/* Name + vote */}
-      <div className="flex items-baseline gap-8 mb-4">
-        <span className="text-[12px] font-semibold" style={{ color: style.name }}>
+      <div className={`flex items-baseline gap-6 mb-3 ${isRight ? "flex-row-reverse" : ""}`}>
+        <span className="text-[11px] font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>
           {agent.avatar} {agent.name}
         </span>
-        <span className="text-[10px] text-white/25">
-          {agent.role}
-        </span>
-        {vote && !isStreaming && (
-          <>
-            <span style={{ color: "#2a2a2a" }}>·</span>
-            <VoteTag vote={vote} />
-          </>
-        )}
+        {vote && !isStreaming && <VoteTag vote={vote} />}
       </div>
 
-      {/* Body */}
+      {/* Bubble */}
       {(text || isStreaming) ? (
-        <p className="text-[12.5px] leading-[1.75] text-white/60 whitespace-pre-wrap">
-          {text}
-          {isStreaming && (
-            <span
-              className="inline-block w-px h-[0.85em] ml-[2px] align-text-bottom animate-pulse"
-              style={{ background: "rgba(255,255,255,0.4)" }}
-            />
-          )}
-        </p>
+        <div
+          className="px-14 py-10"
+          style={{
+            background: isRight ? "#0b84fe" : "#2c2c2e",
+            borderRadius: isRight ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+          }}
+        >
+          <p className="text-[13px] leading-[1.65] whitespace-pre-wrap" style={{ color: "#fff" }}>
+            {text}
+            {isStreaming && (
+              <span
+                className="inline-block w-px h-[0.85em] ml-[2px] align-text-bottom animate-pulse"
+                style={{ background: "rgba(255,255,255,0.6)" }}
+              />
+            )}
+          </p>
+        </div>
       ) : (
-        <span className="text-[11px]" style={{ color: "#2a2a2a" }}>…</span>
+        <div
+          className="px-14 py-10"
+          style={{
+            background: isRight ? "#0b84fe" : "#2c2c2e",
+            borderRadius: isRight ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+          }}
+        >
+          <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>…</span>
+        </div>
       )}
     </div>
   );
@@ -214,9 +224,14 @@ function Verdict({ result }: {
 function Feed({ state, onRetry }: { state: CouncilState; onRetry: () => void }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const scrollKey =
+    state.phase +
+    state.currentRound +
+    state.agents.map((a) => a.messages.length + a.currentStreamContent.length).join(",");
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  });
+  }, [scrollKey]);
 
   if (state.phase === "idle" || state.phase === "connecting") {
     return (
@@ -308,16 +323,27 @@ export function CouncilDeliberation({ intentId, onComplete }: CouncilDeliberatio
   const completedRef = useRef(false);
 
   useEffect(() => {
+    startedRef.current = false;
+    completedRef.current = false;
+  }, [intentId]);
+
+  useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
     start();
-  }, [start]);
+  }, [intentId, start]);
 
   useEffect(() => {
     if (completedRef.current) return;
     if (state.result && (state.phase === "complete" || state.phase === "cached")) {
+      const record = councilStateToArchivedRecord(state);
+      if (!record) return;
       completedRef.current = true;
-      onComplete({ approved: state.result.approved, ratio: state.result.ratio });
+      onComplete({
+        approved: state.result.approved,
+        ratio: state.result.ratio,
+        record,
+      });
     }
   }, [state.phase, state.result, onComplete]);
 
