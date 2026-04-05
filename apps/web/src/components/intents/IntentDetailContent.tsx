@@ -25,12 +25,17 @@ import {
 	isTransferIntent,
 } from "@agent-intents/shared";
 import { buildPolymarketOrderTypedData } from "@/lib/polymarket";
-import { buildOrderFromIntent, simulateOrder } from "@/lib/polymarket-order";
+import {
+	buildOrderFromIntent,
+	parseLimitPriceForOrder,
+	simulateOrder,
+	type SimulationResult,
+} from "@/lib/polymarket-order";
 import { checkPolymarketConnection, submitSignedOrder } from "@/lib/polymarket-submit";
 import { PolymarketIntentDetail } from "./PolymarketIntentDetail";
 import { Button, Tag } from "@ledgerhq/lumen-ui-react";
 import { Check, Copy } from "@ledgerhq/lumen-ui-react/symbols";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { verifyTypedData } from "viem";
 
 // =============================================================================
@@ -625,6 +630,12 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 	const [isRejecting, setIsRejecting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
+	const [polyLimitPrice, setPolyLimitPrice] = useState("");
+	const [polySimPreview, setPolySimPreview] = useState<SimulationResult | null>(null);
+	const [polyPricePreview, setPolyPricePreview] = useState<"idle" | "loading" | "ready" | "error">(
+		"idle",
+	);
+
 	const { details } = intent;
 	const isTransfer = isTransferIntent(details);
 	const isPolymarket = isPolymarketTrade(details);
@@ -648,6 +659,50 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 	const effectiveChain = SUPPORTED_CHAINS[effectiveChainId as SupportedChainId];
 	const isEffectiveWrongChain = walletChainId !== null && walletChainId !== effectiveChainId;
 
+	const polyDetailsForPreview = isPolymarket ? (details as PolymarketTradeDetails) : null;
+	useEffect(() => {
+		if (!isPolymarket || !isPending || !polyDetailsForPreview?.tokenId) {
+			setPolyLimitPrice("");
+			setPolySimPreview(null);
+			setPolyPricePreview("idle");
+			return;
+		}
+		const tokenId = polyDetailsForPreview.tokenId;
+		let cancelled = false;
+		setPolyLimitPrice("");
+		setPolySimPreview(null);
+		setPolyPricePreview("loading");
+		simulateOrder(tokenId)
+			.then((s) => {
+				if (cancelled) return;
+				setPolySimPreview(s);
+				const rounded = Math.round(s.price * 100) / 100;
+				const clamped = Math.min(0.99, Math.max(0.01, rounded));
+				setPolyLimitPrice(clamped.toFixed(2));
+				setPolyPricePreview("ready");
+			})
+			.catch(() => {
+				if (cancelled) return;
+				const op = polyDetailsForPreview.outcomePrice;
+				if (op != null && op > 0 && op < 1) {
+					const clamped = Math.min(0.99, Math.max(0.01, Math.round(op * 100) / 100));
+					setPolyLimitPrice(clamped.toFixed(2));
+					setPolyPricePreview("ready");
+				} else {
+					setPolyPricePreview("error");
+				}
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [isPolymarket, isPending, intent.id, polyDetailsForPreview?.tokenId, polyDetailsForPreview?.outcomePrice]);
+
+	const parsedPolyLimit = parseLimitPriceForOrder(polyLimitPrice);
+	const polySignReady =
+		!isPolymarket ||
+		(polyPricePreview === "ready" && parsedPolyLimit != null) ||
+		(polyPricePreview === "error" && parsedPolyLimit != null);
+
 	const handleSign = async () => {
 		setError(null);
 
@@ -669,6 +724,12 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 				setError("Connect to Polymarket first (Settings > Polymarket)");
 				return;
 			}
+			const userLimit = parseLimitPriceForOrder(polyLimitPrice);
+			if (userLimit == null) {
+				setError("Enter a limit price between 0.01 and 0.99 (step 0.01)");
+				return;
+			}
+
 			setIsSigning(true);
 			try {
 				// Step 1: Simulate — fetch latest price + negRisk
@@ -676,8 +737,10 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 				const simulation = await simulateOrder(polyDetails.tokenId);
 				console.log("[Polymarket] Simulation:", simulation);
 
-				// Step 2: Build order with fresh price
-				const order = buildOrderFromIntent(polyDetails, account, simulation);
+				// Step 2: Build order with user limit price (still tick-rounded inside builder)
+				const order = buildOrderFromIntent(polyDetails, account, simulation, {
+					limitPrice: userLimit,
+				});
 				console.log("[Polymarket] Order built:", order.message);
 
 				// Step 3: Sign on Ledger
@@ -1009,6 +1072,41 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 				<div className="rounded-sm bg-error-transparent px-12 py-8 body-3 text-error">{error}</div>
 			)}
 
+			{isPolymarket && isPending && polyDetailsForPreview?.tokenId && (
+				<div className="rounded-lg bg-muted-transparent p-12 flex flex-col gap-8">
+					<label className="body-3 text-muted" htmlFor={`poly-limit-${intent.id}`}>
+						Limit price (USDC per share, step 0.01)
+					</label>
+					<input
+						id={`poly-limit-${intent.id}`}
+						type="number"
+						inputMode="decimal"
+						step={0.01}
+						min={0.01}
+						max={0.99}
+						value={polyLimitPrice}
+						onChange={(e) => setPolyLimitPrice(e.target.value)}
+						onBlur={() => {
+							const p = parseLimitPriceForOrder(polyLimitPrice);
+							if (p != null) setPolyLimitPrice(p.toFixed(2));
+						}}
+						disabled={polyPricePreview === "loading"}
+						className="body-2 rounded-sm border border-muted-subtle bg-surface px-12 py-8 w-full text-base"
+					/>
+					{polySimPreview && (
+						<span className="body-4 text-muted">Market tick: {polySimPreview.tickSize}</span>
+					)}
+					{polyPricePreview === "loading" && (
+						<span className="body-3 text-muted">Loading quote…</span>
+					)}
+					{polyPricePreview === "error" && !polySimPreview && (
+						<span className="body-3 text-warning">
+							Live quote unavailable — enter a limit price manually or retry later.
+						</span>
+					)}
+				</div>
+			)}
+
 			{/* Chain mismatch warning - use effective chain for x402 */}
 			{isEffectiveWrongChain && (
 				<div className="rounded-sm bg-warning-transparent px-12 py-8 body-3 text-warning">
@@ -1029,7 +1127,13 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 				<Button
 					appearance="base"
 					onClick={handleSign}
-					disabled={isSigning || isRejecting || isEffectiveWrongChain || updateStatus.isPending}
+					disabled={
+						isSigning ||
+						isRejecting ||
+						isEffectiveWrongChain ||
+						updateStatus.isPending ||
+						(isPolymarket && !polySignReady)
+					}
 					isFull
 				>
 					{isSigning ? <Spinner size="sm" /> : isX402 ? "Authorize" : "Sign with Ledger"}

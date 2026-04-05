@@ -48,7 +48,12 @@ import { resolve } from "node:path";
 import cors from "cors";
 import express from "express";
 import { v4 as uuidv4 } from "uuid";
-import { scanMarkets, getMarketDetails } from "./polymarket-scanner.js";
+import {
+	scanMarkets,
+	getMarketDetails,
+	isMarketEndDateStillValid,
+	type MarketOpportunity,
+} from "./polymarket-scanner.js";
 import {
 	deliberateAndPropose,
 	deliberate,
@@ -1090,6 +1095,13 @@ app.get("/api/council/deliberate", async (req, res) => {
 			.map((o) => `  - ${o.name}: ${(o.price * 100).toFixed(1)}%`)
 			.join("\n");
 
+		const {
+			getCouncilTradingBankrollUsdc,
+			SYSTEM_PROMPTS,
+			AGENT_LABELS,
+		} = await import("./agent-council.js");
+		const councilBankroll = getCouncilTradingBankrollUsdc();
+
 		const marketContext = `## Trading Opportunity
 
 **Market:** ${market.question}
@@ -1103,6 +1115,7 @@ ${outcomesStr}
 **End Date:** ${market.endDate}
 **Signal:** ${market.signal} (strength: ${market.signalStrength}/100)
 **Memo:** ${market.memo}
+**Trading bankroll (max you may allocate on one approved trade):** $${councilBankroll} USDC
 
 The intent proposes: ${polyDetails.outcome} for ${polyDetails.amount} USDC.
 
@@ -1125,8 +1138,6 @@ Should we take a position on this market? If so, which outcome and how much?`;
 		console.log(
 			`[Council SSE] model=${modelName}${geminiKey ? ` geminiBase=${GEMINI_OPENAI_COMPAT_BASE_URL}` : ""}`,
 		);
-
-		const { SYSTEM_PROMPTS, AGENT_LABELS } = await import("./agent-council.js");
 
 		const agentRoles = ["analyst", "riskManager", "contrarian"] as const;
 		const allMessages: Array<{ agent: string; round: number; content: string }> = [];
@@ -1306,6 +1317,15 @@ app.post("/api/polymarket/council/deliberate", async (req, res) => {
 			return;
 		}
 
+		if (!isMarketEndDateStillValid(market.endDate)) {
+			res.status(400).json({
+				success: false,
+				error: "Market is outdated or resolves too soon for trading",
+				endDate: market.endDate,
+			});
+			return;
+		}
+
 		const userReason = outcome
 			? `Agent proposes ${outcome} — ${reason || "no reason given"}`
 			: reason || "Analyze this opportunity";
@@ -1445,18 +1465,16 @@ app.listen(PORT, () => {
 		scanRunning = true;
 		try {
 			latestScanResults = await scanMarkets({ limit: 10, sortBy: "volume" });
-			
-			// Create intents for new markets
+
 			const existing = getExistingConditionIds();
 			let created = 0;
-			for (const market of latestScanResults) {
-				if (existing.has(market.conditionId)) continue;
-				
-				// Pick the best outcome (highest signal)
-				const bestOutcome = market.outcomes.reduce((a, b) => a.price > b.price ? a : b);
-				
+
+			const createIntentFromCouncil = (trade: ProposedTrade, mkt: MarketOpportunity): string => {
 				const id = `int_${Date.now()}_${uuidv4().slice(0, 8)}`;
 				const now = new Date().toISOString();
+				const selectedOutcome = mkt.outcomes.find(
+					(o) => o.name.toLowerCase() === trade.outcome.toLowerCase(),
+				);
 				const intent: Intent = {
 					id,
 					userId: "polymarket-scanner",
@@ -1464,29 +1482,58 @@ app.listen(PORT, () => {
 					agentName: "Polymarket Scanner",
 					details: {
 						type: "polymarket_trade" as const,
-						conditionId: market.conditionId,
-						marketTitle: market.question,
-						outcome: bestOutcome.name as "Yes" | "No",
-						amount: "50",
-						outcomePrice: bestOutcome.price,
-						tokenId: bestOutcome.tokenId,
+						conditionId: mkt.conditionId,
+						marketTitle: mkt.question,
+						outcome: trade.outcome,
+						amount: trade.amount,
+						outcomePrice: selectedOutcome?.price,
+						tokenId: selectedOutcome?.tokenId,
 						chainId: 137,
-						memo: `${market.signal} (${market.signalStrength}/100) — ${market.memo}`,
+						memo: `${trade.reasoning} | Scan: ${mkt.signal} (${mkt.signalStrength}/100) — ${mkt.memo}`.slice(
+							0,
+							2000,
+						),
 					},
-					urgency: market.signalStrength > 80 ? "high" : "normal",
+					urgency: mkt.signalStrength > 80 ? "high" : "normal",
 					status: "pending",
 					createdAt: now,
 					expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
 					statusHistory: [{ status: "pending", timestamp: now }],
 				};
 				intents.set(id, intent);
-				created++;
-				console.log(`[AutoScan] 📝 Created intent ${id} for "${market.question}" (${market.signal})`);
+				return id;
+			};
+
+			for (const market of latestScanResults) {
+				if (existing.has(market.conditionId)) continue;
+
+				console.log(`[AutoScan] 🧑‍⚖️ Council deliberation for: "${market.question.slice(0, 72)}..."`);
+				const userReason = `Auto-scan — ${market.signal} (strength ${market.signalStrength}/100). ${market.memo}`;
+
+				const deliberation = await deliberateAndPropose(
+					market,
+					userReason,
+					createIntentFromCouncil,
+				);
+
+				if (deliberation.createdIntentId) {
+					created++;
+					existing.add(market.conditionId);
+					const pt = deliberation.proposedTrade;
+					console.log(
+						`[AutoScan] 📝 Intent ${deliberation.createdIntentId} — ${pt?.outcome} ${pt?.amount} USDC`,
+					);
+				} else {
+					console.log(
+						`[AutoScan] ℹ️ Council ${deliberation.verdict} (no intent) — "${market.question.slice(0, 60)}..."`,
+					);
+				}
 			}
+
 			if (created > 0) {
-				console.log(`[AutoScan] ✅ Created ${created} new intents from scan`);
+				console.log(`[AutoScan] ✅ Created ${created} intent(s) after council approval`);
 			} else {
-				console.log(`[AutoScan] ℹ️ No new markets to create intents for`);
+				console.log(`[AutoScan] ℹ️ No new approved intents (no pending slots filled or council rejected)`);
 			}
 		} catch (err) {
 			console.error("[AutoScan] ❌ Error:", err instanceof Error ? err.message : err);
