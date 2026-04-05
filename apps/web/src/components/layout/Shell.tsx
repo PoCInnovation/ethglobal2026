@@ -97,16 +97,11 @@ export function Shell({ children }: ShellProps) {
 
 			{/* Desktop app — hidden below lg breakpoint */}
 			<div className="hidden lg:flex min-h-screen flex-col bg-canvas text-base">
-				{/* Hackathon disclaimer banner */}
-				<div className="w-full bg-black text-white dark:bg-white dark:text-black px-16 py-8 text-center body-3">
-					This is a Hackathon project vibe coded — this is not a production-ready project.
-				</div>
-
 				{/* Header */}
 				<Header />
 
-				{/* Left Navbar - Fixed position on left side, below header + banner */}
-				<aside className="fixed left-24 top-[112px] bottom-24 z-50 flex items-center">
+				{/* Left Navbar - Fixed position on left side, below header */}
+				<aside className="fixed left-24 top-[80px] bottom-24 z-50 flex items-center">
 					<LeftNavbar />
 				</aside>
 

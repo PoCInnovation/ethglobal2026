@@ -194,22 +194,33 @@ app.post("/api/auth/verify", async (req, res) => {
 		(c) => c.walletAddress === wallet && c.nonce === nonce && !c.usedAt && c.expiresAt > Date.now(),
 	);
 	if (!challenge) {
+		const allForWallet = Array.from(authChallenges.values()).filter(c => c.walletAddress === wallet);
+		console.log(`[Auth Verify] ❌ No valid challenge for ${wallet} nonce=${nonce}`);
+		console.log(`[Auth Verify]   Total challenges in store: ${authChallenges.size}`);
+		console.log(`[Auth Verify]   Challenges for wallet: ${allForWallet.length}`);
+		for (const c of allForWallet) {
+			console.log(`[Auth Verify]     nonce=${c.nonce} used=${!!c.usedAt} expired=${c.expiresAt < Date.now()}`);
+		}
 		res.status(401).json({ success: false, error: "Invalid or expired challenge" });
 		return;
 	}
+	console.log(`[Auth Verify] ✅ Challenge matched for ${wallet}`);
 
-	// Verify signature
+	// Verify signature — use the recovered address as the session identity
+	let sessionWallet: string;
 	try {
 		const { recoverMessageAddress } = await import("viem");
 		const recovered = await recoverMessageAddress({
 			message: challenge.message,
 			signature: signature as `0x${string}`,
 		});
-		if (recovered.toLowerCase() !== wallet) {
-			res.status(401).json({ success: false, error: "Signature does not match wallet" });
-			return;
+		sessionWallet = recovered.toLowerCase();
+		console.log(`[Auth Verify] recovered=${sessionWallet} claimed=${wallet} match=${sessionWallet === wallet}`);
+		if (sessionWallet !== wallet) {
+			console.log(`[Auth Verify] ⚠️  Address mismatch — using recovered address for session`);
 		}
-	} catch {
+	} catch (err) {
+		console.log(`[Auth Verify] ❌ Signature verification error:`, err instanceof Error ? err.message : err);
 		res.status(401).json({ success: false, error: "Invalid signature" });
 		return;
 	}
@@ -217,18 +228,18 @@ app.post("/api/auth/verify", async (req, res) => {
 	// Mark challenge as used
 	challenge.usedAt = Date.now();
 
-	// Create session
+	// Create session with the recovered address (proven by signature)
 	const sessionId = uuidv4();
 	const expiresAt = Date.now() + SESSION_VALIDITY_MS;
-	authSessions.set(sessionId, { id: sessionId, walletAddress: wallet, expiresAt });
+	authSessions.set(sessionId, { id: sessionId, walletAddress: sessionWallet, expiresAt });
 
 	const expDate = new Date(expiresAt).toUTCString();
 	res.setHeader(
 		"Set-Cookie",
-		`${SESSION_COOKIE_NAME}=${sessionId}; Path=/; HttpOnly; Expires=${expDate}`,
+		`${SESSION_COOKIE_NAME}=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Expires=${expDate}`,
 	);
-	console.log(`[Auth Session] ${wallet} session=${sessionId}`);
-	res.json({ success: true, walletAddress: wallet });
+	console.log(`[Auth Session] ${sessionWallet} session=${sessionId}`);
+	res.json({ success: true, walletAddress: sessionWallet });
 });
 
 // GET /api/me – return authenticated wallet from session cookie
@@ -237,14 +248,17 @@ app.get("/api/me", (req, res) => {
 	const cookies = parseCookies(req.headers.cookie);
 	const sessionId = cookies[SESSION_COOKIE_NAME];
 	if (!sessionId) {
+		console.log(`[Auth /api/me] ❌ No session cookie | cookies: ${req.headers.cookie?.slice(0, 80) ?? "(none)"}`);
 		res.json({ success: false, error: "Authentication required" });
 		return;
 	}
 	const session = authSessions.get(sessionId);
 	if (!session || session.expiresAt < Date.now()) {
+		console.log(`[Auth /api/me] ❌ Session invalid or expired | sessionId=${sessionId.slice(0, 8)}...`);
 		res.json({ success: false, error: "Authentication required" });
 		return;
 	}
+	console.log(`[Auth /api/me] ✅ ${session.walletAddress}`);
 	res.json({ success: true, walletAddress: session.walletAddress });
 });
 
@@ -1262,15 +1276,34 @@ Should we take a position on this market? If so, which outcome and how much?`;
 		const approved = totalFor >= 2;
 		const ratio = total > 0 ? totalFor / total : 0;
 
+		// Generate a short summary explaining the decision
+		let summary = approved
+			? `Trade approved by council (${totalFor}/${total} votes)`
+			: `Trade rejected by council (${totalAgainst}/${total} against)`;
+		try {
+			const round2Messages = allMessages.filter(m => m.round === 2).map(m => m.content).join("\n---\n");
+			const summaryCompletion = await client.chat.completions.create({
+				model: modelName,
+				messages: [
+					{ role: "system", content: "You summarize trading council decisions in ONE short sentence (max 20 words). Be specific about the key reason. No preamble." },
+					{ role: "user", content: `The council ${approved ? "APPROVED" : "REJECTED"} this trade (${totalFor}/${total} votes for).\n\nAgent opinions:\n${round2Messages}\n\nWrite a one-sentence summary explaining WHY.` },
+				],
+				temperature: 0.3,
+				max_tokens: 60,
+			});
+			const generated = summaryCompletion.choices[0]?.message?.content?.trim();
+			if (generated) summary = generated;
+		} catch (err) {
+			console.warn("[Council SSE] Summary generation failed, using default");
+		}
+
 		const councilResult = {
 			approved,
 			ratio,
 			totalFor,
 			totalAgainst,
 			totalAbstain,
-			summary: approved
-				? `Trade approved by council (${totalFor}/${total} votes)`
-				: `Trade rejected by council (${totalAgainst}/${total} against)`,
+			summary,
 			agents: agentRoles.map(role => {
 				const info = agentMap[role]!;
 				const rounds = allMessages.filter(m => m.agent === role).map(m => m.content);

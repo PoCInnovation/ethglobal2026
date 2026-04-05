@@ -46,10 +46,9 @@ async function checkExistingSession(wallet: string): Promise<boolean> {
 		const res = await fetch(`${API_BASE}/api/me`, { credentials: "include" });
 		const json = (await res.json().catch(() => null)) as MeResponse | null;
 		if (!json || json.success !== true) return false;
-		return (
-			typeof json.walletAddress === "string" &&
-			json.walletAddress.toLowerCase() === wallet
-		);
+		// Accept any valid session — the address may differ from the Ledger account
+		// due to derivation path mismatch, but the signature was verified server-side.
+		return typeof json.walletAddress === "string" && json.walletAddress.length > 0;
 	} catch {
 		return false;
 	}
