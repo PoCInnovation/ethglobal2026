@@ -37,6 +37,13 @@ export function IntentDetailDialog({
 }: IntentDetailDialogProps) {
 	const [councilDone, setCouncilDone] = useState(councilAlreadyDone);
 	const [councilVerdict, setCouncilVerdict] = useState<{ approved: boolean } | null>(null);
+	// Lifted polymarket trade params — shared between detail content and actions
+	const initPrice = (intent?.details as { outcomePrice?: number })?.outcomePrice ?? 0;
+	const initAmount = Number.parseFloat(intent?.details?.amount ?? "0") || 0;
+	const [polyPrice, setPolyPrice] = useState(initPrice > 0 ? Math.round(initPrice * 100) / 100 : 0.5);
+	const [polyShares, setPolyShares] = useState(initPrice > 0 && initAmount > 0 ? Math.max(5, Math.ceil(initAmount / initPrice)) : 5);
+	// Derived total amount
+	const polyAmount = polyPrice > 0 ? String(Math.round(polyShares * polyPrice * 100) / 100) : "0";
 	/** Snapshot from live SSE — `intent` from the client cache never includes server-only `councilResult`. */
 	const [archivedCouncilRecord, setArchivedCouncilRecord] = useState<CouncilArchivedRecord | null>(null);
 	// Council deliberation only starts when user clicks "Analyze"
@@ -58,6 +65,10 @@ export function IntentDetailDialog({
 		setCouncilStarted(false);
 		setCouncilVerdict(null);
 		setArchivedCouncilRecord(null);
+		const resetPrice = (intent?.details as { outcomePrice?: number })?.outcomePrice ?? 0;
+		const resetAmount = Number.parseFloat(intent?.details?.amount ?? "0") || 0;
+		setPolyPrice(resetPrice > 0 ? Math.round(resetPrice * 100) / 100 : 0.5);
+		setPolyShares(resetPrice > 0 && resetAmount > 0 ? Math.max(5, Math.ceil(resetAmount / resetPrice)) : 5);
 	}, [intent?.id, councilAlreadyDone]);
 
 	const handleCouncilComplete = useCallback(
@@ -144,7 +155,7 @@ export function IntentDetailDialog({
 							>
 								{/* Scrollable trade details */}
 								<div className="flex-1 overflow-y-auto px-16 py-16 flex flex-col gap-16" style={{ scrollbarWidth: "none" }}>
-									<IntentDetailContent intent={intent} />
+									<IntentDetailContent intent={intent} polyAmount={polyAmount} polyPrice={polyPrice} polyShares={polyShares} onPolyPriceChange={setPolyPrice} onPolySharesChange={setPolyShares} />
 
 									{/* Verdict badge */}
 									{councilVerdict && (
@@ -190,7 +201,7 @@ export function IntentDetailDialog({
 											</span>
 										</div>
 									)}
-									<IntentDetailContent.Actions intent={intent} onClose={handleClose} />
+									<IntentDetailContent.Actions intent={intent} onClose={handleClose} polyAmount={polyAmount} polyPrice={polyPrice} polyShares={polyShares} onPolyPriceChange={setPolyPrice} onPolySharesChange={setPolyShares} />
 								</div>
 							</div>
 

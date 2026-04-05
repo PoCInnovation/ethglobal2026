@@ -27,7 +27,6 @@ import {
 import { buildPolymarketOrderTypedData } from "@/lib/polymarket";
 import {
 	buildOrderFromIntent,
-	parseLimitPriceForOrder,
 	simulateOrder,
 	type SimulationResult,
 } from "@/lib/polymarket-order";
@@ -42,11 +41,19 @@ import { verifyTypedData } from "viem";
 // Types
 // =============================================================================
 
-interface IntentDetailContentProps {
+interface PolyTradeProps {
+	polyPrice?: number;
+	polyShares?: number;
+	polyAmount?: string;
+	onPolyPriceChange?: (price: number) => void;
+	onPolySharesChange?: (shares: number) => void;
+}
+
+interface IntentDetailContentProps extends PolyTradeProps {
 	intent: Intent;
 }
 
-interface IntentActionsProps {
+interface IntentActionsProps extends PolyTradeProps {
 	intent: Intent;
 	onClose: () => void;
 }
@@ -245,7 +252,7 @@ function UrgencyBadge({ urgency }: { urgency: string }) {
 // Hero Section Component
 // =============================================================================
 
-function HeroSection({ intent }: { intent: Intent }) {
+function HeroSection({ intent, displayAmount: overrideAmount }: { intent: Intent; displayAmount?: string }) {
 	const { details } = intent;
 	const isTransfer = isTransferIntent(details);
 	const isPolymarket = isPolymarketTrade(details);
@@ -258,7 +265,7 @@ function HeroSection({ intent }: { intent: Intent }) {
 	) as SupportedChainId;
 	const chain = SUPPORTED_CHAINS[effectiveChainId];
 
-	let displayAmount = details.amount;
+	let displayAmount = overrideAmount ?? details.amount;
 	let displayToken = isPolymarket ? "USDC" : isTransfer ? details.token : "—";
 	if (isX402 && isTransfer && details.x402?.accepted) {
 		displayAmount = formatAtomicAmount(details.x402.accepted.amount, 6);
@@ -616,7 +623,7 @@ function TechnicalDetailsSection({ intent }: { intent: Intent }) {
 // Actions Component
 // =============================================================================
 
-function IntentActions({ intent, onClose }: IntentActionsProps) {
+function IntentActions({ intent, onClose, polyAmount: externalPolyAmount, polyPrice: externalPolyPrice, polyShares: externalPolyShares, onPolyPriceChange, onPolySharesChange }: IntentActionsProps) {
 	const {
 		chainId: walletChainId,
 		sendTransaction,
@@ -630,11 +637,15 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 	const [isRejecting, setIsRejecting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const [polyLimitPrice, setPolyLimitPrice] = useState("");
 	const [polySimPreview, setPolySimPreview] = useState<SimulationResult | null>(null);
 	const [polyPricePreview, setPolyPricePreview] = useState<"idle" | "loading" | "ready" | "error">(
 		"idle",
 	);
+
+	// Use lifted state from dialog
+	const polyAmount = externalPolyAmount ?? "0";
+	const polyPrice = externalPolyPrice ?? 0;
+	const polyShares = externalPolyShares ?? 0;
 
 	const { details } = intent;
 	const isTransfer = isTransferIntent(details);
@@ -659,34 +670,35 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 	const effectiveChain = SUPPORTED_CHAINS[effectiveChainId as SupportedChainId];
 	const isEffectiveWrongChain = walletChainId !== null && walletChainId !== effectiveChainId;
 
+	// Simulation: fetch live price when dialog opens for a polymarket intent
 	const polyDetailsForPreview = isPolymarket ? (details as PolymarketTradeDetails) : null;
 	useEffect(() => {
 		if (!isPolymarket || !isPending || !polyDetailsForPreview?.tokenId) {
-			setPolyLimitPrice("");
 			setPolySimPreview(null);
 			setPolyPricePreview("idle");
 			return;
 		}
 		const tokenId = polyDetailsForPreview.tokenId;
 		let cancelled = false;
-		setPolyLimitPrice("");
 		setPolySimPreview(null);
 		setPolyPricePreview("loading");
 		simulateOrder(tokenId)
 			.then((s) => {
 				if (cancelled) return;
 				setPolySimPreview(s);
+				// Update the lifted price with the live simulation price
 				const rounded = Math.round(s.price * 100) / 100;
 				const clamped = Math.min(0.99, Math.max(0.01, rounded));
-				setPolyLimitPrice(clamped.toFixed(2));
+				onPolyPriceChange?.(clamped);
 				setPolyPricePreview("ready");
 			})
 			.catch(() => {
 				if (cancelled) return;
+				// Fallback to intent's outcomePrice
 				const op = polyDetailsForPreview.outcomePrice;
 				if (op != null && op > 0 && op < 1) {
 					const clamped = Math.min(0.99, Math.max(0.01, Math.round(op * 100) / 100));
-					setPolyLimitPrice(clamped.toFixed(2));
+					onPolyPriceChange?.(clamped);
 					setPolyPricePreview("ready");
 				} else {
 					setPolyPricePreview("error");
@@ -697,11 +709,11 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 		};
 	}, [isPolymarket, isPending, intent.id, polyDetailsForPreview?.tokenId, polyDetailsForPreview?.outcomePrice]);
 
-	const parsedPolyLimit = parseLimitPriceForOrder(polyLimitPrice);
 	const polySignReady =
 		!isPolymarket ||
-		(polyPricePreview === "ready" && parsedPolyLimit != null) ||
-		(polyPricePreview === "error" && parsedPolyLimit != null);
+		((polyPricePreview === "ready" || polyPricePreview === "error") &&
+			polyPrice > 0 &&
+			polyShares >= 5);
 
 	const handleSign = async () => {
 		setError(null);
@@ -724,14 +736,32 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 				setError("Connect to Polymarket first (Settings > Polymarket)");
 				return;
 			}
-			const userLimit = parseLimitPriceForOrder(polyLimitPrice);
-			if (userLimit == null) {
-				setError("Enter a limit price between 0.01 and 0.99 (step 0.01)");
+			if (polyPrice <= 0 || polyPrice >= 1) {
+				setError("Price unavailable — please wait for quote or retry");
+				return;
+			}
+			if (polyShares < 5) {
+				setError(`Minimum 5 shares required (current: ${polyShares}).`);
+				return;
+			}
+			const userAmount = Number.parseFloat(polyAmount);
+			if (!Number.isFinite(userAmount) || userAmount <= 0) {
+				setError("Enter a valid USDC amount");
 				return;
 			}
 
 			setIsSigning(true);
 			try {
+				// Step 0: Persist user-specified amount to the backend intent
+				if (String(userAmount) !== polyDetails.amount) {
+					await fetch("/api/intents/update-amount", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						credentials: "include",
+						body: JSON.stringify({ id: intent.id, amount: String(userAmount) }),
+					});
+				}
+
 				// Step 1: CRE — trigger on-chain write + read verified market data
 				console.log("[Polymarket] Verifying market via CRE oracle for conditionId:", polyDetails.conditionId);
 				const verifyRes = await fetch("/api/polymarket/verify", {
@@ -760,10 +790,10 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 				const simulation = await simulateOrder(effectiveTokenId);
 				console.log("[Polymarket] Simulation:", simulation);
 
-				// Step 3: Build order with oracle-verified data injected
-				const enrichedDetails = { ...polyDetails, marketTitle: verifiedMarket.question, tokenId: effectiveTokenId };
-				const order = buildOrderFromIntent(enrichedDetails, account, simulation);
-				console.log("[Polymarket] Order built (oracle source:", verifiedMarket.source, "):", order.message);
+				// Step 3: Build order with user-specified price, shares→amount, and oracle-verified data
+				const enrichedDetails = { ...polyDetails, marketTitle: verifiedMarket.question, tokenId: effectiveTokenId, amount: String(userAmount) };
+				const order = buildOrderFromIntent(enrichedDetails, account, simulation, { limitPrice: polyPrice });
+				console.log("[Polymarket] Order built (oracle source:", verifiedMarket.source, ", price:", polyPrice, ", shares:", polyShares, ", amount:", userAmount, "):", order.message);
 
 				// Step 4: Sign on Ledger
 				const signature = await signTypedDataV4(order);
@@ -1094,39 +1124,8 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 				<div className="rounded-sm bg-error-transparent px-12 py-8 body-3 text-error">{error}</div>
 			)}
 
-			{isPolymarket && isPending && polyDetailsForPreview?.tokenId && (
-				<div className="rounded-lg bg-muted-transparent p-12 flex flex-col gap-8">
-					<label className="body-3 text-muted" htmlFor={`poly-limit-${intent.id}`}>
-						Limit price (USDC per share, step 0.01)
-					</label>
-					<input
-						id={`poly-limit-${intent.id}`}
-						type="number"
-						inputMode="decimal"
-						step={0.01}
-						min={0.01}
-						max={0.99}
-						value={polyLimitPrice}
-						onChange={(e) => setPolyLimitPrice(e.target.value)}
-						onBlur={() => {
-							const p = parseLimitPriceForOrder(polyLimitPrice);
-							if (p != null) setPolyLimitPrice(p.toFixed(2));
-						}}
-						disabled={polyPricePreview === "loading"}
-						className="body-2 rounded-sm border border-muted-subtle bg-surface px-12 py-8 w-full text-base"
-					/>
-					{polySimPreview && (
-						<span className="body-4 text-muted">Market tick: {polySimPreview.tickSize}</span>
-					)}
-					{polyPricePreview === "loading" && (
-						<span className="body-3 text-muted">Loading quote…</span>
-					)}
-					{polyPricePreview === "error" && !polySimPreview && (
-						<span className="body-3 text-warning">
-							Live quote unavailable — enter a limit price manually or retry later.
-						</span>
-					)}
-				</div>
+			{isPolymarket && isPending && polyPricePreview === "loading" && (
+				<span className="body-3 text-muted">Loading quote…</span>
 			)}
 
 			{/* Chain mismatch warning - use effective chain for x402 */}
@@ -1169,21 +1168,31 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 // Main Content Component
 // =============================================================================
 
-export function IntentDetailContent({ intent }: IntentDetailContentProps) {
+export function IntentDetailContent({ intent, polyAmount, polyPrice, polyShares, onPolyPriceChange, onPolySharesChange }: IntentDetailContentProps) {
 	const { details } = intent;
 	const isTransfer = isTransferIntent(details);
 	const isPolymarket = isPolymarketTrade(details);
 	const isX402 = isTransfer && !!details.x402?.accepted;
 	const hasSettlementReceipt = isTransfer && !!details.x402?.settlementReceipt;
 
+	const isPending = intent.status === "pending";
+
 	return (
 		<div className="flex flex-col gap-16">
-			<HeroSection intent={intent} />
+			<HeroSection intent={intent} displayAmount={isPolymarket && polyAmount ? polyAmount : undefined} />
 			{hasSettlementReceipt && isTransfer && (
 				<SettlementReceiptSection details={details} />
 			)}
 			{isPolymarket ? (
-				<PolymarketIntentDetail details={details} />
+				<PolymarketIntentDetail
+					details={details}
+					editable={isPending}
+					polyPrice={polyPrice}
+					polyShares={polyShares}
+					polyAmount={polyAmount}
+					onPriceChange={onPolyPriceChange}
+					onSharesChange={onPolySharesChange}
+				/>
 			) : isX402 && isTransfer ? (
 				<X402PaymentSection details={details} />
 			) : isTransfer ? (

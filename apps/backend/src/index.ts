@@ -409,6 +409,23 @@ app.post("/api/intents/status", (req, res) => {
 	res.json({ success: true, intent });
 });
 
+// Update intent amount (POST /api/intents/update-amount)
+app.post("/api/intents/update-amount", (req, res) => {
+	const { id, amount } = req.body as { id?: string; amount?: string };
+	if (!id || !amount) {
+		res.status(400).json({ success: false, error: "Missing id or amount" });
+		return;
+	}
+	const intent = intents.get(id);
+	if (!intent) {
+		res.status(404).json({ success: false, error: "Intent not found" });
+		return;
+	}
+	intent.details.amount = amount;
+	console.log(`[Intent AMOUNT] ${id} → ${amount} USDC`);
+	res.json({ success: true, intent });
+});
+
 // Update intent status (legacy PATCH – kept for backward compat)
 app.patch("/api/intents/:id/status", (req, res) => {
 	const intent = intents.get(req.params.id);
