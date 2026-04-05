@@ -44,7 +44,7 @@ const CRE_BINARY = process.env.CRE_BINARY ?? "/usr/local/bin/cre";
 // ---------------------------------------------------------------------------
 
 async function resolveGammaMarketId(conditionId: string): Promise<number | null> {
-	const url = `${POLYMARKET_CONFIG.GAMMA_API_BASE}/markets?condition_id=${conditionId}&limit=1`;
+	const url = `${POLYMARKET_CONFIG.GAMMA_API_BASE}/markets?condition_ids=${conditionId}&limit=1`;
 	const res = await fetch(url);
 	if (!res.ok) return null;
 	const markets = await res.json();
@@ -188,7 +188,7 @@ export interface VerifiedMarketData {
 	question: string;
 	endDate: number; // Unix seconds
 	active: boolean;
-	tokenId: string;       // Yes outcome token ID
+	tokenId: string;       // Token ID for the requested outcome
 	negRisk: boolean;      // Whether market uses negRisk CTF Exchange
 	tickSize: string;      // Decimal string e.g. "0.01"
 	source: "on-chain" | "gamma-fallback";
@@ -196,60 +196,80 @@ export interface VerifiedMarketData {
 
 export async function fetchVerifiedMarketForSigning(
 	conditionId: string,
+	outcome?: string,
 ): Promise<VerifiedMarketData> {
 	const isOracleDeployed =
 		ORACLE_ADDRESS !== "0x0000000000000000000000000000000000000000";
 
-	// [TEST MODE] Skip all on-chain reads — use API only
-	logger.info({ conditionId }, "TEST MODE: Using Gamma/CLOB API directly (no on-chain)");
-	return fetchGammaFallback(conditionId);
+	if (!isOracleDeployed) {
+		logger.warn({ conditionId }, "Oracle not deployed — falling back to Gamma");
+		return fetchGammaFallback(conditionId, outcome);
+	}
 
-	// --- Original flow (commented for testing) ---
-	// if (!isOracleDeployed) {
-	// 	logger.warn({ conditionId }, "Oracle not deployed — falling back to Gamma");
-	// 	return fetchGammaFallback(conditionId);
-	// }
-	// const marketId = await resolveGammaMarketId(conditionId);
-	// if (!marketId) {
-	// 	return fetchGammaFallback(conditionId);
-	// }
-	// try {
-	// 	await runCRESimulation([marketId]);
-	// } catch (err) {
-	// 	return fetchGammaFallback(conditionId);
-	// }
-	// const onChain = await readOnChainMarket(conditionId);
-	// if (onChain) {
-	// 	return {
-	// 		conditionId: onChain.conditionId,
-	// 		question: onChain.question,
-	// 		endDate: Number(onChain.endDate),
-	// 		active: onChain.active,
-	// 		tokenId: onChain.tokenId,
-	// 		negRisk: onChain.negRisk,
-	// 		tickSize: onChain.tickSize,
-	// 		source: "on-chain",
-	// 	};
-	// }
-	// return fetchGammaFallback(conditionId);
+	const marketId = await resolveGammaMarketId(conditionId);
+	if (!marketId) {
+		logger.warn({ conditionId }, "Could not resolve Gamma marketId — falling back");
+		return fetchGammaFallback(conditionId, outcome);
+	}
+
+	try {
+		await runCRESimulation([marketId]);
+	} catch (err) {
+		logger.warn({ err, conditionId }, "CRE simulation failed — falling back to Gamma");
+		return fetchGammaFallback(conditionId, outcome);
+	}
+
+	const onChain = await readOnChainMarket(conditionId);
+	if (onChain) {
+		// On-chain stores only the Yes tokenId — if outcome is No, fall back to Gamma for the correct tokenId
+		if (outcome && outcome.toLowerCase() === "no") {
+			logger.info({ conditionId }, "CRE on-chain: outcome is No, fetching No tokenId from Gamma");
+			const gamma = await fetchGammaFallback(conditionId, outcome);
+			return {
+				...gamma,
+				question: onChain.question,
+				active: onChain.active,
+				negRisk: onChain.negRisk,
+				tickSize: onChain.tickSize,
+				source: "on-chain",
+			};
+		}
+		return {
+			conditionId: onChain.conditionId,
+			question: onChain.question,
+			endDate: Number(onChain.endDate),
+			active: onChain.active,
+			tokenId: onChain.tokenId,
+			negRisk: onChain.negRisk,
+			tickSize: onChain.tickSize,
+			source: "on-chain",
+		};
+	}
+
+	logger.warn({ conditionId }, "CRE simulation ran but market not on-chain yet — falling back to Gamma");
+	return fetchGammaFallback(conditionId, outcome);
 }
 
-async function fetchGammaFallback(conditionId: string): Promise<VerifiedMarketData> {
+async function fetchGammaFallback(conditionId: string, outcome?: string): Promise<VerifiedMarketData> {
 	const url = `${POLYMARKET_CONFIG.CLOB_API_BASE}/markets/${conditionId}`;
 	const res = await fetch(url);
 	if (!res.ok) throw new Error(`Cannot fetch market data for ${conditionId}`);
 	const m = await res.json();
 
-	// Resolve Yes token from tokens array
 	const tokens: Array<{ token_id: string; outcome: string }> = m.tokens ?? [];
-	const yesToken = tokens.find((t) => t.outcome === "Yes") ?? tokens[0];
+	// Find the token matching the requested outcome; default to "Yes"
+	const targetOutcome = outcome ?? "Yes";
+	const token =
+		tokens.find((t) => t.outcome.toLowerCase() === targetOutcome.toLowerCase()) ??
+		tokens.find((t) => t.outcome === "Yes") ??
+		tokens[0];
 
 	return {
 		conditionId,
 		question: m.question,
 		endDate: m.end_date_iso ? Math.floor(new Date(m.end_date_iso).getTime() / 1000) : 0,
 		active: m.active ?? false,
-		tokenId: yesToken?.token_id ?? "",
+		tokenId: token?.token_id ?? "",
 		negRisk: m.neg_risk ?? false,
 		tickSize: m.minimum_tick_size ?? "0.01",
 		source: "gamma-fallback",

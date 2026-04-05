@@ -677,7 +677,7 @@ function IntentActions({ intent, onClose }: IntentActionsProps) {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					credentials: "include",
-					body: JSON.stringify({ conditionId: polyDetails.conditionId }),
+					body: JSON.stringify({ conditionId: polyDetails.conditionId, outcome: polyDetails.outcome }),
 				});
 				if (!verifyRes.ok) {
 					const err = await verifyRes.json().catch(() => ({}));

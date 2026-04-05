@@ -121,23 +121,15 @@ function detectSignal(market: GammaMarket, prices: number[]): {
 export async function scanMarkets(options: ScanOptions = {}): Promise<MarketOpportunity[]> {
 	const { limit = 20, sortBy = "volume", activeOnly = true } = options;
 
-	console.log(`\n╔══════════════════════════════════════════════════════════╗`);
-	console.log(`║  🔍 POLYMARKET SCANNER — Scanning markets...             ║`);
-	console.log(`║  Options: limit=${limit}, sortBy=${sortBy}, activeOnly=${activeOnly}`);
-	console.log(`╚══════════════════════════════════════════════════════════╝`);
-
 	// Fetch top markets from Gamma API sorted by volume
 	const url = `${GAMMA_API}/markets?limit=${Math.min(limit * 2, 100)}&order=volume24hr&ascending=false&closed=false`;
-	console.log(`[Scanner] 📡 Fetching from Gamma API...`);
 	const res = await fetch(url);
 
 	if (!res.ok) {
-		console.error(`[Scanner] ❌ Gamma API error: ${res.status} ${res.statusText}`);
 		throw new Error(`Gamma API error: ${res.status} ${res.statusText}`);
 	}
 
 	const rawMarkets: GammaMarket[] = await res.json();
-	console.log(`[Scanner] 📦 Received ${rawMarkets.length} raw markets from Gamma API`);
 
 	const opportunities: MarketOpportunity[] = [];
 
@@ -158,18 +150,6 @@ export async function scanMarkets(options: ScanOptions = {}): Promise<MarketOppo
 			tokenId: clobTokenIds[i] ?? "",
 		}));
 
-		// Detailed log for each market found
-		const pricesStr = outcomes.map(o => `${o.name}: ${(o.price * 100).toFixed(1)}%`).join(" | ");
-		const signalEmoji = signal === "mispricing" ? "⚠️" : signal === "volume_spike" ? "📈" : signal === "momentum" ? "🚀" : "💡";
-		console.log(`[Scanner] ──────────────────────────────────────────────`);
-		console.log(`[Scanner] ${signalEmoji} Market: ${market.question}`);
-		console.log(`[Scanner]   Condition ID: ${market.conditionId}`);
-		console.log(`[Scanner]   Outcomes:     ${pricesStr}`);
-		console.log(`[Scanner]   Volume 24h:   $${market.volume24hr?.toLocaleString() ?? "N/A"}`);
-		console.log(`[Scanner]   Liquidity:    $${Number(market.liquidity).toLocaleString()}`);
-		console.log(`[Scanner]   End Date:     ${market.endDate}`);
-		console.log(`[Scanner]   Signal:       ${signal} (strength: ${signalStrength}/100)`);
-		console.log(`[Scanner]   Memo:         ${memo}`);
 
 		opportunities.push({
 			conditionId: market.conditionId,
@@ -202,17 +182,6 @@ export async function scanMarkets(options: ScanOptions = {}): Promise<MarketOppo
 
 	const result = opportunities.slice(0, limit);
 
-	// Summary log
-	const signalCounts = result.reduce((acc, o) => {
-		acc[o.signal] = (acc[o.signal] || 0) + 1;
-		return acc;
-	}, {} as Record<string, number>);
-	console.log(`[Scanner] ══════════════════════════════════════════════`);
-	console.log(`[Scanner] ✅ Scan complete: ${result.length} opportunities found`);
-	console.log(`[Scanner]   Signals: ${Object.entries(signalCounts).map(([k, v]) => `${k}: ${v}`).join(", ")}`);
-	console.log(`[Scanner]   Top market: "${result[0]?.question ?? "none"}"`);
-	console.log(`\n`);
-
 	return result;
 }
 
@@ -220,15 +189,11 @@ export async function scanMarkets(options: ScanOptions = {}): Promise<MarketOppo
  * Fetch detailed info for a specific market by conditionId.
  */
 export async function getMarketDetails(conditionId: string): Promise<MarketOpportunity | null> {
-	console.log(`[Scanner] 🔎 Fetching details for conditionId: ${conditionId}`);
 	// Gamma API supports querying by conditionId
 	const url = `${GAMMA_API}/markets?condition_id=${conditionId}`;
 	const res = await fetch(url);
 
-	if (!res.ok) {
-		console.error(`[Scanner] ❌ Gamma API error: ${res.status}`);
-		return null;
-	}
+	if (!res.ok) return null;
 
 	const markets: GammaMarket[] = await res.json();
 	if (!markets.length || !markets[0]) return null;

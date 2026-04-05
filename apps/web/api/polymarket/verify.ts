@@ -25,16 +25,16 @@ export default methodRouter({
 			return;
 		}
 
-		const { conditionId } = req.body ?? {};
+		const { conditionId, outcome } = req.body ?? {};
 		if (!conditionId || typeof conditionId !== "string") {
 			jsonError(res, "conditionId is required", 400);
 			return;
 		}
 
-		logger.info({ conditionId }, "Fetching verified market data for signing");
+		logger.info({ conditionId, outcome }, "Fetching verified market data for signing");
 
 		try {
-			const market = await fetchVerifiedMarketForSigning(conditionId);
+			const market = await fetchVerifiedMarketForSigning(conditionId, outcome);
 			logger.info({ conditionId, source: market.source, question: market.question }, "Verified market data ready");
 			jsonSuccess(res, market);
 		} catch (err) {

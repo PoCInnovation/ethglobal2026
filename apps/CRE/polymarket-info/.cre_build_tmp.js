@@ -17052,7 +17052,10 @@ var PolymarketOracleABI = [
           { name: "conditionId", type: "bytes32" },
           { name: "question", type: "string" },
           { name: "endDate", type: "uint256" },
-          { name: "active", type: "bool" }
+          { name: "active", type: "bool" },
+          { name: "tokenId", type: "uint256" },
+          { name: "negRisk", type: "bool" },
+          { name: "tickSize", type: "uint256" }
         ]
       }
     ],
@@ -17071,6 +17074,9 @@ var PolymarketOracleABI = [
           { name: "question", type: "string" },
           { name: "endDate", type: "uint256" },
           { name: "active", type: "bool" },
+          { name: "tokenId", type: "uint256" },
+          { name: "negRisk", type: "bool" },
+          { name: "tickSize", type: "uint256" },
           { name: "lastUpdate", type: "uint256" }
         ]
       }
@@ -17091,6 +17097,9 @@ var PolymarketOracleABI = [
           { name: "question", type: "string" },
           { name: "endDate", type: "uint256" },
           { name: "active", type: "bool" },
+          { name: "tokenId", type: "uint256" },
+          { name: "negRisk", type: "bool" },
+          { name: "tickSize", type: "uint256" },
           { name: "lastUpdate", type: "uint256" }
         ]
       }
@@ -17252,7 +17261,10 @@ var readOnChainMarkets = (runtime2, evmClient, conditionIds) => {
       question: decoded.question ?? decoded[1],
       endDate: BigInt(decoded.endDate ?? decoded[2] ?? 0),
       active: decoded.active ?? decoded[3],
-      lastUpdate
+      tokenId: BigInt(decoded.tokenId ?? decoded[4] ?? 0),
+      negRisk: decoded.negRisk ?? decoded[5] ?? false,
+      tickSize: BigInt(decoded.tickSize ?? decoded[6] ?? 0),
+      lastUpdate: BigInt(decoded.lastUpdate ?? decoded[7] ?? 0)
     });
   }
   return existing;
@@ -17303,11 +17315,21 @@ var fetchMarkets = (sendRequester, marketIds) => {
       throw new Error(`Source mismatch for market ${id}: active differs (gamma=${gamma.active}, clob=${clob.active})`);
     }
     logs.push(`[${id}] ✓ Cross-source validated`);
+    const tokens = clob.tokens ?? [];
+    const yesToken = tokens.find((t) => t.outcome === "Yes") ?? tokens[0];
+    const resolvedTokenId = yesToken?.token_id ?? "";
+    const negRisk = clob.neg_risk ?? false;
+    const rawTickSize = clob.minimum_tick_size ?? "0.01";
+    const tickSizeBps = Math.round(parseFloat(rawTickSize) * 1e4);
+    logs.push(`[${id}] Trade fields: tokenId=${resolvedTokenId.slice(0, 20)}..., negRisk=${negRisk}, tickSize=${rawTickSize} (${tickSizeBps}bps)`);
     markets.push({
       conditionId: gamma.conditionId,
       question: gamma.question,
       endDate: gamma.endDate,
-      active: gamma.active
+      active: gamma.active,
+      tokenId: resolvedTokenId,
+      negRisk,
+      tickSize: tickSizeBps
     });
   }
   const sorted = markets.sort((a, b) => a.conditionId.localeCompare(b.conditionId));
@@ -17324,7 +17346,9 @@ var computeDelta = (fetched, onChain) => {
       continue;
     }
     const endDateUnix = BigInt(Math.floor(new Date(m.endDate).getTime() / 1000));
-    if (existing.question !== m.question || existing.endDate !== endDateUnix || existing.active !== m.active) {
+    const tokenIdBig = BigInt(m.tokenId || "0");
+    const tickSizeBig = BigInt(m.tickSize);
+    if (existing.question !== m.question || existing.endDate !== endDateUnix || existing.active !== m.active || existing.tokenId !== tokenIdBig || existing.negRisk !== m.negRisk || existing.tickSize !== tickSizeBig) {
       delta.push(m);
     }
   }
@@ -17340,7 +17364,10 @@ var writeMarketsOnChain = (runtime2, evmClient, markets) => {
         conditionId: m.conditionId,
         question: m.question,
         endDate: BigInt(Math.floor(new Date(m.endDate).getTime() / 1000)),
-        active: m.active
+        active: m.active,
+        tokenId: BigInt(m.tokenId || "0"),
+        negRisk: m.negRisk,
+        tickSize: BigInt(m.tickSize)
       }))
     ]
   });
