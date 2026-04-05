@@ -49,6 +49,7 @@ import cors from "cors";
 import express from "express";
 import { v4 as uuidv4 } from "uuid";
 import { scanMarkets, getMarketDetails } from "./polymarket-scanner.js";
+import { fetchVerifiedMarketForSigning } from "./oracle-cre.js";
 import {
 	deliberateAndPropose,
 	deliberate,
@@ -745,6 +746,24 @@ app.post("/api/market-context/sign", (req, res) => {
 
 // ============ Polymarket Market Lookup Proxy ============
 
+// Verify market by conditionId — used by frontend before signing
+app.post("/api/polymarket/verify", async (req, res) => {
+	const { conditionId, outcome } = req.body as { conditionId?: string; outcome?: string };
+	if (!conditionId) {
+		res.status(400).json({ error: "Missing conditionId" });
+		return;
+	}
+	try {
+		console.log(`[Verify] conditionId=${conditionId} outcome=${outcome} — running CRE pipeline`);
+		const market = await fetchVerifiedMarketForSigning(conditionId, outcome);
+		console.log(`[Verify] source=${market.source} active=${market.active} tokenId=${market.tokenId}`);
+		res.json(market);
+	} catch (err) {
+		console.error("[Verify] Failed:", err);
+		res.status(502).json({ error: err instanceof Error ? err.message : "Market verification failed" });
+	}
+});
+
 // Proxy Gamma API requests to avoid browser CORS issues
 app.get("/api/polymarket/market-lookup", async (req, res) => {
 	const tokenId = req.query.tokenId as string;
@@ -1134,7 +1153,6 @@ Should we take a position on this market? If so, which outcome and how much?`;
 		// Round 1
 		for (const role of agentRoles) {
 			const agentInfo = agentMap[role]!;
-			console.log(`[Council SSE] Round 1: ${role} starts thinking...`);
 			send("agent_thinking", { agentId: agentInfo.id, round: 1 });
 
 			const messages: any[] = [
@@ -1143,15 +1161,13 @@ Should we take a position on this market? If so, which outcome and how much?`;
 			];
 
 			try {
-				console.log(`[Council SSE] Calling client.chat.completions.create for ${role}...`);
 				const stream = await client.chat.completions.create({
 					model: modelName,
 					messages,
 					temperature: 0.7,
-					max_tokens: 800,
+					max_tokens: 2000,
 					stream: true,
 				});
-				console.log(`[Council SSE] Client call successful for ${role}, starting iteration...`);
 
 				let fullContent = "";
 				for await (const chunk of stream) {
@@ -1161,7 +1177,6 @@ Should we take a position on this market? If so, which outcome and how much?`;
 						send("agent_token", { agentId: agentInfo.id, token });
 					}
 				}
-				console.log(`[Council SSE] Stream complete for ${role}`);
 
 				allMessages.push({ agent: role, round: 1, content: fullContent });
 				send("agent_message", { agentId: agentInfo.id, round: 1, content: fullContent });
@@ -1203,7 +1218,7 @@ Should we take a position on this market? If so, which outcome and how much?`;
 					model: modelName,
 					messages,
 					temperature: 0.7,
-					max_tokens: 800,
+					max_tokens: 2000,
 					stream: true,
 				});
 				console.log(`[Council SSE] Round 2: Client call successful for ${role}, starting iteration...`);

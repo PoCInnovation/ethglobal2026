@@ -19,6 +19,9 @@ contract PolymarketOracle {
         string question;     // Market title displayed on Ledger
         uint256 endDate;     // Unix timestamp — market expiry
         bool active;         // Whether the market is still tradable
+        uint256 tokenId;     // Outcome token ID (Yes token)
+        bool negRisk;        // Whether this market uses negRisk CTF Exchange
+        uint256 tickSize;    // Tick size in basis points (100 = 0.01, 10 = 0.001)
         uint256 lastUpdate;  // Block timestamp of last CRE update
     }
 

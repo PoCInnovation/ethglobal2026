@@ -148,7 +148,7 @@ async function askAgent(
 		model: defaultLlmModel(),
 		messages,
 		temperature: 0.7,
-		max_tokens: 800,
+		max_tokens: 2000,
 	});
 
 	return completion.choices[0]?.message?.content ?? "(no response)";

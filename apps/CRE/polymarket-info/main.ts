@@ -38,6 +38,9 @@ interface MarketInfo {
 	question: string
 	endDate: string
 	active: boolean
+	tokenId: string      // Yes outcome token ID (big uint256 as decimal string)
+	negRisk: boolean     // Whether market uses negRisk CTF Exchange
+	tickSize: number     // Tick size in basis points (100 = 0.01, 10 = 0.001)
 }
 
 interface OnChainMarket {
@@ -45,6 +48,9 @@ interface OnChainMarket {
 	question: string
 	endDate: bigint
 	active: boolean
+	tokenId: bigint
+	negRisk: boolean
+	tickSize: bigint
 	lastUpdate: bigint
 }
 
@@ -110,7 +116,10 @@ const readOnChainMarkets = (
 			question: decoded.question ?? decoded[1],
 			endDate: BigInt(decoded.endDate ?? decoded[2] ?? 0),
 			active: decoded.active ?? decoded[3],
-			lastUpdate,
+			tokenId: BigInt(decoded.tokenId ?? decoded[4] ?? 0),
+			negRisk: decoded.negRisk ?? decoded[5] ?? false,
+			tickSize: BigInt(decoded.tickSize ?? decoded[6] ?? 0),
+			lastUpdate: BigInt(decoded.lastUpdate ?? decoded[7] ?? 0),
 		})
 	}
 
@@ -175,11 +184,25 @@ const fetchMarkets = (sendRequester: HTTPSendRequester, marketIds: number[]): Ma
 
 		logs.push(`[${id}] ✓ Cross-source validated`)
 
+		// Extract trade-specific fields from CLOB response
+		const tokens: Array<{ token_id: string; outcome: string }> = clob.tokens ?? []
+		const yesToken = tokens.find((t) => t.outcome === 'Yes') ?? tokens[0]
+		const resolvedTokenId = yesToken?.token_id ?? ''
+		const negRisk: boolean = clob.neg_risk ?? false
+		const rawTickSize: string = clob.minimum_tick_size ?? '0.01'
+		// Convert tick size string to basis points: "0.01" → 100, "0.001" → 10, "0.0001" → 1
+		const tickSizeBps = Math.round(parseFloat(rawTickSize) * 10000)
+
+		logs.push(`[${id}] Trade fields: tokenId=${resolvedTokenId.slice(0, 20)}..., negRisk=${negRisk}, tickSize=${rawTickSize} (${tickSizeBps}bps)`)
+
 		markets.push({
 			conditionId: gamma.conditionId,
 			question: gamma.question,
 			endDate: gamma.endDate,
 			active: gamma.active,
+			tokenId: resolvedTokenId,
+			negRisk,
+			tickSize: tickSizeBps,
 		})
 	}
 
@@ -210,7 +233,16 @@ const computeDelta = (
 
 		// Check if any field changed
 		const endDateUnix = BigInt(Math.floor(new Date(m.endDate).getTime() / 1000))
-		if (existing.question !== m.question || existing.endDate !== endDateUnix || existing.active !== m.active) {
+		const tokenIdBig = BigInt(m.tokenId || '0')
+		const tickSizeBig = BigInt(m.tickSize)
+		if (
+			existing.question !== m.question ||
+			existing.endDate !== endDateUnix ||
+			existing.active !== m.active ||
+			existing.tokenId !== tokenIdBig ||
+			existing.negRisk !== m.negRisk ||
+			existing.tickSize !== tickSizeBig
+		) {
 			delta.push(m)
 		}
 	}
@@ -233,6 +265,9 @@ const writeMarketsOnChain = (runtime: Runtime<Config>, evmClient: EVMClient, mar
 				question: m.question,
 				endDate: BigInt(Math.floor(new Date(m.endDate).getTime() / 1000)),
 				active: m.active,
+				tokenId: BigInt(m.tokenId || '0'),
+				negRisk: m.negRisk,
+				tickSize: BigInt(m.tickSize),
 			})),
 		],
 	})
