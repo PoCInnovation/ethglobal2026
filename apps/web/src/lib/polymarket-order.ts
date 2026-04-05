@@ -49,6 +49,15 @@ export interface SimulationResult {
  * Fetch latest price + market info from backend (calls Gamma API).
  * This is the "simulation" step before signing.
  */
+/** Parse user-entered limit price (0–1 USDC per share), snapped to 0.01. */
+export function parseLimitPriceForOrder(input: string): number | null {
+	const normalized = input.trim().replace(",", ".");
+	if (!normalized) return null;
+	const n = Number.parseFloat(normalized);
+	if (!Number.isFinite(n) || n <= 0 || n >= 1) return null;
+	return Math.round(n * 100) / 100;
+}
+
 export async function simulateOrder(tokenId: string): Promise<SimulationResult> {
 	console.log("[Order] Simulating order for tokenId:", tokenId);
 	const res = await fetch(`${API_BASE}/api/polymarket/simulate?tokenId=${tokenId}`);
@@ -88,12 +97,14 @@ function getRoundConfig(tickSize: string): { price: number; size: number; amount
  * @param details - The enriched polymarket trade intent (must have tokenId)
  * @param walletAddress - The connected Ledger wallet address (maker/signer)
  * @param simulation - Fresh simulation result with current price and negRisk
+ * @param options.limitPrice - Optional price per share (0–1); overrides simulation.price, still tick-rounded
  * @returns EIP-712 typed data ready for signTypedDataV4
  */
 export function buildOrderFromIntent(
 	details: PolymarketTradeDetails,
 	walletAddress: string,
 	simulation: SimulationResult,
+	options?: { limitPrice?: number },
 ) {
 	if (!details.tokenId) {
 		throw new Error("Intent is missing tokenId — market data not enriched");
@@ -104,7 +115,7 @@ export function buildOrderFromIntent(
 		throw new Error(`Invalid amount: ${details.amount}`);
 	}
 
-	const rawPrice = simulation.price;
+	const rawPrice = options?.limitPrice ?? simulation.price;
 	if (rawPrice <= 0 || rawPrice >= 1) {
 		throw new Error(`Invalid price from simulation: ${rawPrice}`);
 	}

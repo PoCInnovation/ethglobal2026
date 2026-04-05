@@ -10,7 +10,7 @@
  *   1. Present opportunity
  *   2. Round 1: each agent gives initial opinion (Risk Manager proposes sizing)
  *   3. Round 2: cross-reactions
- *   4. Vote: APPROVE / REJECT / ABSTAIN — 2/3 majority required
+ *   4. Vote: APPROVE / REJECT / ABSTAIN — YOLO: approve unless ≥2 REJECT
  *   5. If approved → create polymarket_trade intent
  */
 
@@ -79,40 +79,61 @@ export const AGENT_LABELS: Record<AgentRole, string> = {
 	contrarian: "🔥 Contrarian",
 };
 
+const DEFAULT_COUNCIL_TRADING_BANKROLL_USDC = 500;
+const MIN_SINGLE_TRADE_USDC = 5;
+
+/** Demo council: random ticket between $10 and $40 USDC (inclusive), picked once per deliberation. */
+export function randomDemoPositionUsdc(): number {
+	return 10 + Math.floor(Math.random() * 31);
+}
+
+/**
+ * Max USDC the council may allocate on one trade (env: COUNCIL_TRADING_BANKROLL_USDC).
+ * The Risk Manager sizes positions as a % of this bankroll from an opportunity score /100.
+ */
+export function getCouncilTradingBankrollUsdc(): number {
+	const raw = process.env.COUNCIL_TRADING_BANKROLL_USDC;
+	if (!raw?.trim()) return DEFAULT_COUNCIL_TRADING_BANKROLL_USDC;
+	const n = Number.parseInt(raw, 10);
+	if (!Number.isFinite(n) || n < MIN_SINGLE_TRADE_USDC) {
+		return DEFAULT_COUNCIL_TRADING_BANKROLL_USDC;
+	}
+	return n;
+}
+
+/**
+ * Hackathon / demo mode: rubber-stamp almost everything. Models still talk, but votes default APPROVE.
+ */
 export const SYSTEM_PROMPTS: Record<AgentRole, string> = {
-	analyst: `You are the **Analyst** on a prediction market trading council. Your role:
-- Evaluate market probabilities using fundamental analysis
-- Identify value bets where market price diverges from true probability
-- Use data-driven reasoning: polling, historical precedent, base rates
-- Focus on expected value (EV) — is this trade +EV?
-- Be specific about WHY you think the market is mispriced
+	analyst: `You are a **rubber-stamp Analyst** for a demo prediction-market council.
 
-Respond in 2-4 concise paragraphs. End with:
-VOTE: APPROVE / REJECT / ABSTAIN
-If approving, state which outcome (Yes/No) you'd bet on and why.`,
+Rules:
+- **LINE 1 MUST be exactly:** \`VOTE: APPROVE\` — use REJECT only if the market is literally broken (no resolution possible, obvious scam). Otherwise always APPROVE.
+- Lines 2–4: max 3 short sentences. Say which side (Yes or No) looks slightly more fun to trade and one fake-sounding reason.
 
-	riskManager: `You are the **Risk Manager** on a prediction market trading council. Your role:
-- Evaluate downside risk and worst-case scenarios
-- Propose appropriate position sizing in USDC (conservative: $10-50, moderate: $50-200, aggressive: $200-500)
-- Consider market liquidity, time to resolution, and correlation risk
-- Flag any red flags: low liquidity, ambiguous resolution criteria, manipulation risk
-- Your sizing decision is final — you own the capital allocation
+Never use ABSTAIN. Never write a long essay.`,
 
-Respond in 2-4 concise paragraphs. End with:
-VOTE: APPROVE / REJECT / ABSTAIN
-POSITION SIZE: $XX USDC (if approving)
-If approving, state the outcome (Yes/No) and exact $ amount.`,
+	riskManager: `You are a **rubber-stamp Risk Manager** for a demo prediction-market council.
 
-	contrarian: `You are the **Contrarian** on a prediction market trading council. Your role:
-- Play devil's advocate — challenge the consensus
-- Identify cognitive biases: anchoring, recency bias, bandwagon effect
-- Point out what could go wrong that others might miss
-- Consider adversarial scenarios: market manipulation, resolution disputes
-- Ask "what would have to be true for the opposite outcome?"
+Rules:
+- **LINE 1 MUST be exactly:** \`VOTE: APPROVE\`
+- **Lines 2–5 MUST be exactly:**
+\`OPPORTUNITY SCORE: 60/100\`
+\`ALLOCATION PCT: YY\`  (YY = any integer 1–25, cosmetic only for this demo)
+\`POSITION SIZE: $ZZ USDC\`  (**ZZ must be exactly the integer** shown in the user message under **Demo position size** — copy it digit-for-digit, do not recalculate from bankroll)
+- Line 6: one sentence — which outcome (Yes or No); mention the ticket is a small random demo size.
 
-Respond in 2-4 concise paragraphs. End with:
-VOTE: APPROVE / REJECT / ABSTAIN
-If you still approve despite your objections, explain what convinced you.`,
+Each deliberation gets a **new random $10–$40** demo size in the user prompt — always mirror that number in POSITION SIZE.
+
+REJECT only if the market cannot resolve. Never ABSTAIN. No paragraphs before line 1.`,
+
+	contrarian: `You are a **tame Contrarian** for a demo prediction-market council.
+
+Rules:
+- **LINE 1 MUST be exactly:** \`VOTE: APPROVE\`
+- Lines 2–3: mention one silly risk, then say we still greenlight for demo purposes.
+
+Never REJECT unless the market is an obvious scam. Never ABSTAIN.`,
 };
 
 // ---------------------------------------------------------------------------
@@ -140,14 +161,14 @@ async function askAgent(
 
 		messages.push({
 			role: "user",
-			content: `Here are the other council members' opinions from the previous round:\n\n${otherMessages}\n\nNow give your response for round ${round}, considering the other perspectives.`,
+			content: `Here are the other council members' opinions from the previous round:\n\n${otherMessages}\n\nNow give your response for round ${round}, considering the other perspectives.${round === 2 ? "\n\n---\nROUND 2 CRITICAL: Your **first line** must be \`VOTE: APPROVE\`, \`VOTE: REJECT\`, or \`VOTE: ABSTAIN\` (prefer APPROVE). Put it before any other text so it is not cut off." : ""}`,
 		});
 	}
 
 	const completion = await client.chat.completions.create({
 		model: defaultLlmModel(),
 		messages,
-		temperature: 0.7,
+		temperature: 0.9,
 		max_tokens: 2000,
 	});
 
@@ -160,47 +181,62 @@ async function askAgent(
 
 function parseVote(message: string): VoteChoice {
 	const upper = message.toUpperCase();
-	// Look for the pattern VOTE: APPROVE/REJECT/ABSTAIN
-	const voteMatch = /VOTE:\s*(APPROVE|REJECT|ABSTAIN)/i.exec(upper);
-	if (voteMatch?.[1]) {
-		return voteMatch[1].toLowerCase() as VoteChoice;
+	// Anywhere in the message (handles markdown, bold, colons)
+	const allVotes = [
+		...upper.matchAll(/\bVOTE\b\s*[:.]?\s*\*?\*?(APPROVE|REJECT|ABSTAIN)\b/gi),
+	];
+	if (allVotes.length > 0) {
+		const raw = allVotes[allVotes.length - 1]?.[1];
+		if (raw) return raw.toLowerCase() as VoteChoice;
 	}
-	// Fallback: look for keywords in the last paragraph
-	const lastParagraph = message.split("\n").filter(Boolean).pop()?.toUpperCase() ?? "";
-	if (lastParagraph.includes("APPROVE")) return "approve";
-	if (lastParagraph.includes("REJECT")) return "reject";
-	return "abstain";
+	// First line often has the vote
+	const head = upper.slice(0, 400);
+	if (/\bAPPROVE\b/.test(head) && !/\bVOTE\b.*\bREJECT\b/.test(head)) return "approve";
+	if (/\bREJECT\b/.test(head)) return "reject";
+	if (/\bABSTAIN\b/.test(head)) return "abstain";
+	// YOLO: models skip the format → count as approve so the demo flow does not stall
+	return "approve";
+}
+
+function clampInt(n: number, lo: number, hi: number): number {
+	return Math.min(hi, Math.max(lo, n));
+}
+
+/** Default side for binary Yes/No: lean underdog for a tiny +EV story (demo). */
+function inferBinaryOutcomeFromMarket(market: MarketOpportunity): "Yes" | "No" {
+	const yes = market.outcomes.find((o) => o.name.toLowerCase() === "yes");
+	const no = market.outcomes.find((o) => o.name.toLowerCase() === "no");
+	if (yes && no) {
+		return yes.price <= no.price ? "Yes" : "No";
+	}
+	return "Yes";
 }
 
 function parseProposedTrade(
 	messages: DeliberationMessage[],
+	bankrollUsdc: number,
+	market: MarketOpportunity,
+	demoPositionUsdc: number,
 ): ProposedTrade | undefined {
-	// Extract trade proposal from Risk Manager's message
 	const riskMsg = messages.find((m) => m.agent === "riskManager");
 	if (!riskMsg) return undefined;
 
 	const text = riskMsg.message;
 
-	// Parse outcome
-	let outcome: "Yes" | "No" = "Yes";
-	if (/outcome.*no\b/i.test(text) || /\bbet.*no\b/i.test(text) || /\bbuy.*no\b/i.test(text)) {
+	let outcome: "Yes" | "No" = inferBinaryOutcomeFromMarket(market);
+	if (/\bbet\s+on\s+no\b/i.test(text) || /\bposition:\s*no\b/i.test(text) || /\boutcome:\s*no\b/i.test(text)) {
+		outcome = "No";
+	} else if (/\bbet\s+on\s+yes\b/i.test(text) || /\bposition:\s*yes\b/i.test(text) || /\boutcome:\s*yes\b/i.test(text)) {
+		outcome = "Yes";
+	} else if (/outcome.*no\b/i.test(text) || /\bbuy.*no\b/i.test(text)) {
 		outcome = "No";
 	}
 
-	// Parse amount from POSITION SIZE: $XX
-	let amount = "50"; // default
-	const sizeMatch = /POSITION\s*SIZE:\s*\$?(\d+)/i.exec(text);
-	if (sizeMatch?.[1]) {
-		amount = sizeMatch[1];
-	} else {
-		// Fallback: look for dollar amounts
-		const dollarMatch = /\$(\d+)\s*(?:USDC|usd)/i.exec(text);
-		if (dollarMatch?.[1]) {
-			amount = dollarMatch[1];
-		}
-	}
+	const cappedDemo = clampInt(demoPositionUsdc, 10, 40);
+	const amount = String(
+		clampInt(cappedDemo, MIN_SINGLE_TRADE_USDC, Math.max(MIN_SINGLE_TRADE_USDC, bankrollUsdc)),
+	);
 
-	// Build reasoning from all approving agents
 	const approveMessages = messages
 		.filter((m) => parseVote(m.message) === "approve")
 		.map((m) => `${m.agentLabel}: ${m.message.split("\n")[0]}`)
@@ -209,7 +245,7 @@ function parseProposedTrade(
 	return {
 		outcome,
 		amount,
-		reasoning: approveMessages || riskMsg.message.split("\n")[0] || "Council approved",
+		reasoning: approveMessages || riskMsg.message.split("\n")[0] || "Council approved (YOLO)",
 	};
 }
 
@@ -243,6 +279,9 @@ export async function deliberate(
 		.map((o) => `  - ${o.name}: ${(o.price * 100).toFixed(1)}%`)
 		.join("\n");
 
+	const bankroll = getCouncilTradingBankrollUsdc();
+	const demoPositionUsdc = randomDemoPositionUsdc();
+
 	const marketContext = `## Trading Opportunity
 
 **Market:** ${market.question}
@@ -256,6 +295,8 @@ ${outcomesStr}
 **End Date:** ${market.endDate}
 **Signal:** ${market.signal} (strength: ${market.signalStrength}/100)
 **Scanner Memo:** ${market.memo}
+**Trading bankroll (max you may allocate on one approved trade):** $${bankroll} USDC
+**Demo position size (random $10–$40 for this run — Risk Manager must use exactly this for POSITION SIZE):** $${demoPositionUsdc} USDC
 ${userReason ? `\n**Agent Reason:** ${userReason}` : ""}
 
 Should we take a position on this market? If so, which outcome and how much?`;
@@ -359,25 +400,36 @@ Should we take a position on this market? If so, which outcome and how much?`;
 		console.log(`[Council]   ${voteEmoji} ${msg.agentLabel}: ${deliberation.votes[msg.agent].toUpperCase()}`);
 	}
 
-	// --- Compute verdict (2/3 majority) ---
 	const approveCount = Object.values(deliberation.votes).filter((v) => v === "approve").length;
 	const rejectCount = Object.values(deliberation.votes).filter((v) => v === "reject").length;
 	const totalTime = ((Date.now() - deliberationStart) / 1000).toFixed(1);
+	const bankrollUsdc = getCouncilTradingBankrollUsdc();
 
 	console.log(`\n[Council] ══════════════════════════════════════════════`);
-	if (approveCount >= 2) {
-		deliberation.verdict = "approved";
-		deliberation.proposedTrade = parseProposedTrade(round2Messages);
-		console.log(`[Council] ✅ VERDICT: APPROVED (${approveCount}/3 approve votes)`);
-		console.log(`[Council]   Trade: ${deliberation.proposedTrade?.outcome} ${deliberation.proposedTrade?.amount} USDC`);
-		console.log(`[Council]   Reasoning: ${deliberation.proposedTrade?.reasoning?.slice(0, 120)}...`);
-	} else if (rejectCount >= 2) {
+	// YOLO: only a supermajority of rejects blocks; everything else approves
+	if (rejectCount >= 2) {
 		deliberation.verdict = "rejected";
 		console.log(`[Council] ❌ VERDICT: REJECTED (${rejectCount}/3 reject votes)`);
 	} else {
-		deliberation.verdict = "no_consensus";
-		console.log(`[Council] ⚖️ VERDICT: NO CONSENSUS`);
-		console.log(`[Council]   Votes: ${JSON.stringify(deliberation.votes)}`);
+		deliberation.verdict = "approved";
+		deliberation.proposedTrade =
+			parseProposedTrade(round2Messages, bankrollUsdc, market, demoPositionUsdc) ??
+			({
+				outcome: inferBinaryOutcomeFromMarket(market),
+				amount: String(
+					clampInt(
+						demoPositionUsdc,
+						MIN_SINGLE_TRADE_USDC,
+						Math.max(MIN_SINGLE_TRADE_USDC, bankrollUsdc),
+					),
+				),
+				reasoning: "YOLO fallback — could not parse Risk Manager sizing",
+			} satisfies ProposedTrade);
+		console.log(
+			`[Council] ✅ VERDICT: APPROVED (YOLO: ${approveCount} approve, ${rejectCount} reject — need 2+ reject to fail)`,
+		);
+		console.log(`[Council]   Trade: ${deliberation.proposedTrade?.outcome} ${deliberation.proposedTrade?.amount} USDC`);
+		console.log(`[Council]   Reasoning: ${deliberation.proposedTrade?.reasoning?.slice(0, 120)}...`);
 	}
 	console.log(`[Council]   Total deliberation time: ${totalTime}s`);
 	console.log(`[Council] ══════════════════════════════════════════════\n`);

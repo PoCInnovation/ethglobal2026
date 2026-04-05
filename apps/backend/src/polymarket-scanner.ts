@@ -41,6 +41,20 @@ export interface ScanOptions {
 const GAMMA_API = "https://gamma-api.polymarket.com";
 const CLOB_API = "https://clob.polymarket.com";
 
+/** Same idea as apps/web/api/polymarket/markets.ts — Gamma endDate is often stale for sports. */
+const MIN_RESOLUTION_LEAD_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * True if the market is still tradeable at `nowMs`: end is in the future with a buffer.
+ * Uses getTime() so comparisons are unambiguous vs server clock.
+ */
+export function isMarketEndDateStillValid(endDate: string, nowMs: number = Date.now()): boolean {
+	const endMs = new Date(endDate).getTime();
+	if (!Number.isFinite(endMs)) return false;
+	const cutoff = nowMs + MIN_RESOLUTION_LEAD_MS;
+	return endMs > cutoff;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -120,9 +134,18 @@ function detectSignal(market: GammaMarket, prices: number[]): {
  */
 export async function scanMarkets(options: ScanOptions = {}): Promise<MarketOpportunity[]> {
 	const { limit = 20, sortBy = "volume", activeOnly = true } = options;
+	const nowMs = Date.now();
 
-	// Fetch top markets from Gamma API sorted by volume
+	console.log(`\n╔══════════════════════════════════════════════════════════╗`);
+	console.log(`║  🔍 POLYMARKET SCANNER — Scanning markets...             ║`);
+	console.log(`║  Options: limit=${limit}, sortBy=${sortBy}, activeOnly=${activeOnly}`);
+	console.log(`╚══════════════════════════════════════════════════════════╝`);
+	console.log(`[Scanner] Clock (UTC): ${new Date(nowMs).toISOString()} — endDate must be > now + 6h`);
+
+	// Over-fetch: many rows are dropped (invalid endDate vs now, or resolve too soon)
+	const fetchCap = Math.min(Math.max(limit * 4, 40), 100);
 	const url = `${GAMMA_API}/markets?limit=${Math.min(limit * 2, 100)}&order=volume24hr&ascending=false&closed=false`;
+	console.log(`[Scanner] 📡 Fetching from Gamma API...`);
 	const res = await fetch(url);
 
 	if (!res.ok) {
@@ -136,6 +159,14 @@ export async function scanMarkets(options: ScanOptions = {}): Promise<MarketOppo
 	for (const market of rawMarkets) {
 		if (!market.conditionId) continue;
 		if (activeOnly && (!market.active || market.closed)) continue;
+
+		if (!isMarketEndDateStillValid(market.endDate, nowMs)) {
+			const endMs = new Date(market.endDate).getTime();
+			console.log(
+				`[Scanner] ⏭️ Skipped (outdated / resolves too soon): "${market.question.slice(0, 60)}..." endDate=${market.endDate} endMs=${endMs} nowMs=${nowMs}`,
+			);
+			continue;
+		}
 
 		const outcomeNames = parseJsonField<string[]>(market.outcomes);
 		const outcomePrices = parseJsonField<string[]>(market.outcomePrices);

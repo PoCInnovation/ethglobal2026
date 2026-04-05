@@ -22,7 +22,7 @@ import {
 	getDeliberation,
 	listDeliberations,
 } from "./agent-council.js";
-import { scanMarkets, getMarketDetails } from "./polymarket-scanner.js";
+import { scanMarkets, getMarketDetails, isMarketEndDateStillValid } from "./polymarket-scanner.js";
 
 // ---------------------------------------------------------------------------
 // Intent creation helper (inline — no HTTP round-trip)
@@ -232,6 +232,18 @@ server.tool(
 						{
 							type: "text" as const,
 							text: `Market not found: ${conditionId}`,
+						},
+					],
+					isError: true,
+				};
+			}
+
+			if (!isMarketEndDateStillValid(market.endDate)) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Market is outdated or resolves too soon (endDate: ${market.endDate}). Use scan_polymarket_markets for current opportunities.`,
 						},
 					],
 					isError: true,
