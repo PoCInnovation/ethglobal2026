@@ -120,7 +120,7 @@ export function buildAuthorizationMessage(params: {
 	trustchainId: string;
 }): string {
 	return [
-		"Authorize agent key for Ledger Agent Payments",
+		"Authorize agent key for Polyledger",
 		`Key: ${params.agentPublicKey}`,
 		`Label: ${params.agentLabel}`,
 		`Identity: ${params.trustchainId}`,
@@ -138,7 +138,7 @@ export function buildRevocationMessage(params: {
 	trustchainId: string;
 }): string {
 	return [
-		"Revoke agent key for Ledger Agent Payments",
+		"Revoke agent key for Polyledger",
 		`Agent ID: ${params.agentId}`,
 		`Key: ${params.agentPublicKey}`,
 		`Identity: ${params.trustchainId}`,

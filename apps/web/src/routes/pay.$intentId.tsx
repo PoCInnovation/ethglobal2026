@@ -14,7 +14,7 @@ import { useState } from "react";
 export const Route = createFileRoute("/pay/$intentId")({
 	component: PayPage,
 	head: () => ({
-		meta: [{ title: "Review Payment — Agent Payments with Ledger" }],
+		meta: [{ title: "Review Payment — Polyledger" }],
 	}),
 });
 

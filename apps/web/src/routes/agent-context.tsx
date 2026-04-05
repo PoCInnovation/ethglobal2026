@@ -5,7 +5,7 @@ export const Route = createFileRoute("/agent-context")({
 	component: AgentContextPage,
 	head: () => ({
 		meta: [
-			{ title: "Context for Agents | Agent Payments with Ledger" },
+			{ title: "Context for Agents | Polyledger" },
 			{
 				name: "description",
 				content:
@@ -861,7 +861,7 @@ echo "Final status: $STATUS"`}
 					<div className="flex items-center justify-between">
 						<div>
 							<p className="body-2 text-muted-subtle">
-								Agent Payments with Ledger — Context for Agents
+								Polyledger — Context for Agents
 							</p>
 							<p className="body-3 text-muted-subtle mt-4">
 								Full API reference:{" "}

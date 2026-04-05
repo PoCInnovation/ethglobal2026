@@ -14,7 +14,7 @@ function MobileGate() {
 				<AgentIntentsLogo size={48} className="text-base" />
 				<h1 className="heading-3-semi-bold text-base">Desktop Only</h1>
 				<p className="body-1 text-muted">
-					Agent Payments with Ledger requires a desktop browser with WebUSB and WebBluetooth support
+					Polyledger requires a desktop browser with WebUSB and WebBluetooth support
 					to connect your Ledger device.
 				</p>
 				<div className="flex flex-col gap-12 w-full rounded-lg bg-muted-transparent p-24">

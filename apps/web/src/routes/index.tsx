@@ -1,5 +1,5 @@
-import { IntentList } from "@/components/intents";
-import { TestPolymarketOrder } from "@/components/TestPolymarketOrder";
+import { HistoryList, IntentList } from "@/components/intents";
+import { cn } from "@/lib/utils";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
@@ -7,52 +7,60 @@ export const Route = createFileRoute("/")({
 	component: HomePage,
 });
 
-const API_BASE = "";
+type Tab = "pending" | "history";
 
 function HomePage() {
-	const [scanning, setScanning] = useState(false);
-
-	const handleScanNow = async () => {
-		setScanning(true);
-		try {
-			await fetch(`${API_BASE}/api/polymarket/scan-now`, { method: "POST" });
-			// Refresh the page to show new intents
-			window.location.reload();
-		} catch {
-			// ignore
-		} finally {
-			setScanning(false);
-		}
-	};
+	const [activeTab, setActiveTab] = useState<Tab>("pending");
 
 	return (
-		<div className="flex flex-col gap-32">
-			{/* Page header */}
-			<div className="flex items-center justify-between">
-				<div className="flex flex-col gap-8">
-					<h1 className="heading-1-semi-bold text-base">Agent Payments with Ledger</h1>
-					<p className="body-1 text-muted">Agents propose, humans sign with hardware</p>
-				</div>
-				<button
-					type="button"
-					onClick={handleScanNow}
-					disabled={scanning}
-					className="px-16 py-10 rounded-xl text-[13px] font-semibold transition-all duration-200"
-					style={{
-						background: scanning ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg, #7c3aed, #2563eb)",
-						color: "#fff",
-						cursor: scanning ? "not-allowed" : "pointer",
-					}}
+		<div className="flex flex-col gap-24">
+			{/* Tabs */}
+			<div className="flex items-center gap-4 border-b border-muted">
+				<TabButton
+					active={activeTab === "pending"}
+					onClick={() => setActiveTab("pending")}
 				>
-					{scanning ? "Scanning…" : "🔍 Scan Markets"}
-				</button>
+					Pending
+				</TabButton>
+				<TabButton
+					active={activeTab === "history"}
+					onClick={() => setActiveTab("history")}
+				>
+					History
+				</TabButton>
 			</div>
 
-			{/* Test Polymarket signing (dev only) */}
-			<TestPolymarketOrder />
-
-			{/* Intent List (handles all states internally) */}
-			<IntentList />
+			{/* Tab content */}
+			{activeTab === "pending" && <IntentList />}
+			{activeTab === "history" && <HistoryList />}
 		</div>
+	);
+}
+
+function TabButton({
+	active,
+	onClick,
+	children,
+}: {
+	active: boolean;
+	onClick: () => void;
+	children: React.ReactNode;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			className={cn(
+				"px-16 py-12 body-2-semi-bold transition-colors relative",
+				active
+					? "text-base"
+					: "text-muted hover:text-base",
+			)}
+		>
+			{children}
+			{active && (
+				<span className="absolute bottom-0 left-0 right-0 h-2 bg-interactive rounded-t-full" />
+			)}
+		</button>
 	);
 }
